@@ -1,4 +1,5 @@
 import discord
+from discord.ext import commands
 import os
 import logging
 from database import init_db
@@ -6,24 +7,30 @@ from database import init_db
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('bot')
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
+class KingshotBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True
+        super().__init__(command_prefix='!', intents=intents)
 
-bot = discord.Client(intents=intents)
+    async def setup_hook(self):
+        await self.load_extension('cogs.roles')
+        logger.info("Loaded extension: cogs.roles")
 
-@bot.event
-async def on_ready():
-    logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
-    logger.info('Initializing SQLite Database...')
-    init_db()
-    logger.info('Initialization complete. Bot is ready.')
+    async def on_ready(self):
+        logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
+        logger.info('Initializing SQLite Database...')
+        init_db()
+        logger.info('Initialization complete. Bot is ready.')
 
 def main():
     token = os.environ.get('DISCORD_TOKEN')
     if not token:
         logger.error("DISCORD_TOKEN environment variable is not set. Please provide it via .env file or environment.")
         return
+        
+    bot = KingshotBot()
     bot.run(token)
 
 if __name__ == "__main__":
