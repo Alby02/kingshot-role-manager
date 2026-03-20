@@ -25,14 +25,14 @@ class Events(commands.Cog):
                 default_pings = {
                     "BOO": {
                         "🐻": "Bear1-BOO",
-                        "⚔️": "Arena-BOO"
+                        "🐼": "Bear2-BOO"
                     },
                     "ZEN": {
-                        "🐼": "Bear1-ZEN",
-                        "🛡️": "Arena-ZEN"
+                        "🐻": "Bear1-ZEN",
+                        "🐼": "Bear2-ZEN"
                     },
                     "BOTH": {
-                        "📢": "All-Ping"
+                        "⚔️": "Arena"
                     }
                 }
                 with open(PINGS_FILE, 'w', encoding='utf-8') as f:
