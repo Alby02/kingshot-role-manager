@@ -82,6 +82,19 @@ def update_ign(discord_id: int, game_id: str, ign: str) -> bool:
         if 'conn' in locals() and conn:
             conn.close()
 
+def get_user_igns(discord_id: int):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT game_id, ign, alliance, rank FROM game_accounts WHERE discord_id = ?', (discord_id,))
+        return cursor.fetchall()
+    except Exception as e:
+        logger.error(f"Error fetching IGNs: {e}")
+        return []
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     init_db()

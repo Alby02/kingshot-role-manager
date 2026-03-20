@@ -21,6 +21,8 @@ class KingshotBot(commands.Bot):
         logger.info("Loaded extension: cogs.verification")
         await self.load_extension('cogs.events')
         logger.info("Loaded extension: cogs.events")
+        await self.load_extension('cogs.admin')
+        logger.info("Loaded extension: cogs.admin")
 
     async def on_ready(self):
         logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
