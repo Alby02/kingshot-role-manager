@@ -22,18 +22,43 @@ class Events(commands.Cog):
             if not os.path.exists(PINGS_FILE):
                 os.makedirs(os.path.dirname(PINGS_FILE) or '.', exist_ok=True)
                 default_pings = {
-                    "🐻": "Bearhunt",
-                    "⚔️": "Arena"
+                    "BOO": {
+                        "🐻": "Bear1-BOO",
+                        "⚔️": "Arena-BOO"
+                    },
+                    "ZEN": {
+                        "🐼": "Bear1-ZEN",
+                        "🛡️": "Arena-ZEN"
+                    },
+                    "BOTH": {
+                        "📢": "All-Ping"
+                    }
                 }
                 with open(PINGS_FILE, 'w', encoding='utf-8') as f:
                     json.dump(default_pings, f, indent=4, ensure_ascii=False)
                 return default_pings
             
             with open(PINGS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # Ensure the 3 base categories exist even if manually edited
+                for cat in ["BOO", "ZEN", "BOTH"]:
+                    if cat not in data:
+                        data[cat] = {}
+                return data
         except Exception as e:
             logger.error(f"Failed to load pings.json: {e}")
-            return {}
+            return {"BOO": {}, "ZEN": {}, "BOTH": {}}
+
+    async def get_or_create_role(self, guild, role_name):
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            try:
+                role = await guild.create_role(name=role_name, mentionable=True, reason="Auto-created Ping Role")
+                logger.info(f"Auto-created missing role: {role_name}")
+            except Exception as e:
+                logger.error(f"Failed to create role {role_name}: {e}")
+                return None
+        return role
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
@@ -48,10 +73,14 @@ class Events(commands.Cog):
             return
 
         emoji_name = payload.emoji.name
-        role_name = self.event_roles.get(emoji_name)
+        role_name = None
+        for category, roles in self.event_roles.items():
+            if emoji_name in roles:
+                role_name = roles[emoji_name]
+                break
         
         if role_name:
-            role = discord.utils.get(guild.roles, name=role_name)
+            role = await self.get_or_create_role(guild, role_name)
             if role:
                 member = guild.get_member(payload.user_id)
                 if member:
@@ -73,7 +102,11 @@ class Events(commands.Cog):
             return
 
         emoji_name = payload.emoji.name
-        role_name = self.event_roles.get(emoji_name)
+        role_name = None
+        for category, roles in self.event_roles.items():
+            if emoji_name in roles:
+                role_name = roles[emoji_name]
+                break
         
         if role_name:
             role = discord.utils.get(guild.roles, name=role_name)
@@ -95,27 +128,38 @@ class Events(commands.Cog):
         if ctx.channel.id not in PING_CHANNEL_IDS:
             await ctx.send(f"⚠️ This channel ID ({ctx.channel.id}) is not listed in `PING_CHANNEL_IDS` in the `.env` file! The menu will deploy, but reactions won't assign roles until you add this channel ID to the config.")
 
-        description_lines = ["React below to opt-in to automated event reminders!\n"]
-        for emoji, role_name in self.event_roles.items():
-            description_lines.append(f"{emoji} : **{role_name}**")
+        description = "React below to opt-in to automated event reminders!\n\n"
+        
+        for category, roles in self.event_roles.items():
+            if roles:
+                description += f"**{category} Events**\n"
+                for emoji, role_name in roles.items():
+                    description += f"{emoji} : {role_name}\n"
+                description += "\n"
 
         embed = discord.Embed(
             title="🔔 Event Ping Roles",
-            description="\n".join(description_lines),
+            description=description.strip(),
             color=discord.Color.blue()
         )
         msg = await ctx.send(embed=embed)
         
         # Seed the emojis
-        for emoji in self.event_roles.keys():
-            await msg.add_reaction(emoji)
+        for category, roles in self.event_roles.items():
+            for emoji in roles.keys():
+                try:
+                    await msg.add_reaction(emoji)
+                except discord.HTTPException:
+                    logger.warning(f"Failed to add reaction emoji: {emoji}")
 
     @commands.command(name="syncPings")
     @commands.has_permissions(administrator=True)
     async def sync_pings(self, ctx):
         """Reloads the event ping configuration from data/pings.json"""
         self.event_roles = self.load_pings()
-        await ctx.send(f"✅ Successfully reloaded {len(self.event_roles)} ping roles from `data/pings.json`!")
+        
+        count = sum(len(roles) for roles in self.event_roles.values())
+        await ctx.send(f"✅ Successfully reloaded {count} ping roles across {len(self.event_roles)} categories from `data/pings.json`!")
 
 async def setup(bot):
     await bot.add_cog(Events(bot))
