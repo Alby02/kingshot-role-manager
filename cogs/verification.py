@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import aiohttp
 import logging
 from database import register_user, update_ign
@@ -22,13 +21,13 @@ class ConfirmView(discord.ui.View):
 
         try:
             register_user(self.discord_id, self.game_id, self.ign)
-            # Public message
-            await interaction.channel.send(f"✅ Success! Your account **{self.ign}** has been linked.")
+            # Public success message
+            await interaction.response.send_message(f"✅ Success! Your account **{self.ign}** has been linked.")
             
-            # Disable buttons and close the ephemeral prompt
+            # Disable buttons and close the prompt
             for child in self.children:
                 child.disabled = True
-            await interaction.response.edit_message(content="Verification completed.", view=self)
+            await interaction.message.edit(view=self)
             
         except Exception as e:
             logger.error(f"DB Error: {e}")
@@ -42,7 +41,7 @@ class ConfirmView(discord.ui.View):
 
         for child in self.children:
             child.disabled = True
-        await interaction.response.edit_message(content="❌ Verification cancelled.", view=self)
+        await interaction.message.edit(content="❌ Verification cancelled.", view=self)
 
 class Verification(commands.Cog):
     def __init__(self, bot):
@@ -61,33 +60,42 @@ class Verification(commands.Cog):
                 logger.error(f"API Fetch Error: {e}")
         return None
 
-    @app_commands.command(name="verify", description="Link a Kingshot account to your Discord.")
-    async def verify(self, interaction: discord.Interaction, player_id: str):
-        # We defer implicitly declaring this interaction as ephemeral
-        await interaction.response.defer(ephemeral=True)
+    @commands.command(name="verify")
+    async def verify(self, ctx, player_id: str = None):
+        """Link a Kingshot account to your Discord."""
+        if not player_id:
+            await ctx.send("Please provide your Player ID. Usage: `!verify <PlayerID>`")
+            return
+
+        msg = await ctx.send("🔍 Searching Kingshot database...")
 
         ign = await self.fetch_ign(player_id)
         if not ign:
-            await interaction.followup.send(f"❌ Could not find an account with ID `{player_id}`. Please check and try again.", ephemeral=True)
+            await msg.edit(content=f"❌ Could not find an account with ID `{player_id}`. Please check and try again.")
             return
 
-        view = ConfirmView(interaction.user.id, player_id, ign)
-        await interaction.followup.send(f"Found account **{ign}**. Is this your username?", view=view, ephemeral=True)
+        view = ConfirmView(ctx.author.id, player_id, ign)
+        await msg.edit(content=f"Found account **{ign}**. Is this your username?", view=view)
 
-    @app_commands.command(name="sync", description="Force an API re-sync of a cached IGN.")
-    async def sync(self, interaction: discord.Interaction, player_id: str):
-        await interaction.response.defer(ephemeral=True)
+    @commands.command(name="sync")
+    async def sync(self, ctx, player_id: str = None):
+        """Force an API re-sync of a cached IGN."""
+        if not player_id:
+            await ctx.send("Please provide the Player ID to sync. Usage: `!sync <PlayerID>`")
+            return
+
+        msg = await ctx.send("🔍 Fetching latest info...")
 
         ign = await self.fetch_ign(player_id)
         if not ign:
-            await interaction.followup.send(f"❌ Could not find an account with ID `{player_id}`.", ephemeral=True)
+            await msg.edit(content=f"❌ Could not find an account with ID `{player_id}`.")
             return
 
-        success = update_ign(interaction.user.id, player_id, ign)
+        success = update_ign(ctx.author.id, player_id, ign)
         if success:
-            await interaction.followup.send(f"✅ Successfully refreshed! Your IGN is now listed as **{ign}**.", ephemeral=True)
+            await msg.edit(content=f"✅ Successfully refreshed! Your IGN is now listed as **{ign}**.")
         else:
-            await interaction.followup.send(f"❌ Error: The account ID `{player_id}` is not linked to your Discord profile.", ephemeral=True)
+            await msg.edit(content=f"❌ Error: The account ID `{player_id}` is not linked to your Discord profile.")
 
 
 async def setup(bot):
