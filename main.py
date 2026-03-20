@@ -17,6 +17,15 @@ class KingshotBot(commands.Bot):
     async def setup_hook(self):
         await self.load_extension('cogs.roles')
         logger.info("Loaded extension: cogs.roles")
+        await self.load_extension('cogs.verification')
+        logger.info("Loaded extension: cogs.verification")
+        
+        # Sync slash commands globally
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"Synced {len(synced)} application commands.")
+        except Exception as e:
+            logger.error(f"Failed to sync application commands: {e}")
 
     async def on_ready(self):
         logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
