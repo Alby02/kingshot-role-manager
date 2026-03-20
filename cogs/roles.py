@@ -10,8 +10,8 @@ class ReactionRoles(commands.Cog):
         self.bot = bot
         self.emoji_to_role = {
             "🟢": "Guest",
-            "🤝": "verify-diplomat",
-            "⚔️": "verify-member"
+            "🤝": "Diplomat",
+            "⚔️": "Member-Verification"
         }
 
     @commands.Cog.listener()
