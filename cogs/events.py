@@ -6,9 +6,10 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# Load PING_CHANNEL_IDS from environment, expecting a comma-separated list of IDs
-ping_channels_str = os.environ.get("PING_CHANNEL_IDS", "")
-PING_CHANNEL_IDS = [int(cid.strip()) for cid in ping_channels_str.split(',') if cid.strip().isdigit()]
+# Load Ping channel IDs from environment
+ping_boo = os.environ.get("PING_CHANNEL_BOO_ID", "")
+ping_zen = os.environ.get("PING_CHANNEL_ZEN_ID", "")
+PING_CHANNEL_IDS = [int(cid.strip()) for cid in [ping_boo, ping_zen] if cid.strip().isdigit()]
 
 PINGS_FILE = "data/pings.json"
 
@@ -40,7 +41,6 @@ class Events(commands.Cog):
             
             with open(PINGS_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Ensure the 3 base categories exist even if manually edited
                 for cat in ["BOO", "ZEN", "BOTH"]:
                     if cat not in data:
                         data[cat] = {}
@@ -60,6 +60,22 @@ class Events(commands.Cog):
                 return None
         return role
 
+    def get_role_from_payload(self, emoji_name, channel_id):
+        is_boo = str(channel_id) == str(ping_boo)
+        is_zen = str(channel_id) == str(ping_zen)
+        
+        categories_to_check = ["BOTH"]
+        if is_boo:
+            categories_to_check.insert(0, "BOO")
+        elif is_zen:
+            categories_to_check.insert(0, "ZEN")
+
+        for category in categories_to_check:
+            roles = self.event_roles.get(category, {})
+            if emoji_name in roles:
+                return roles[emoji_name]
+        return None
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         if payload.user_id == self.bot.user.id:
@@ -72,12 +88,7 @@ class Events(commands.Cog):
         if not guild:
             return
 
-        emoji_name = payload.emoji.name
-        role_name = None
-        for category, roles in self.event_roles.items():
-            if emoji_name in roles:
-                role_name = roles[emoji_name]
-                break
+        role_name = self.get_role_from_payload(payload.emoji.name, payload.channel_id)
         
         if role_name:
             role = await self.get_or_create_role(guild, role_name)
@@ -89,8 +100,6 @@ class Events(commands.Cog):
                         logger.info(f"Assigned {role_name} to {member.display_name}")
                     except discord.Forbidden:
                         logger.error(f"Missing permissions to assign {role_name}")
-                    except discord.HTTPException as e:
-                        logger.error(f"Failed to assign {role_name}: {e}")
 
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload):
@@ -101,12 +110,7 @@ class Events(commands.Cog):
         if not guild:
             return
 
-        emoji_name = payload.emoji.name
-        role_name = None
-        for category, roles in self.event_roles.items():
-            if emoji_name in roles:
-                role_name = roles[emoji_name]
-                break
+        role_name = self.get_role_from_payload(payload.emoji.name, payload.channel_id)
         
         if role_name:
             role = discord.utils.get(guild.roles, name=role_name)
@@ -118,23 +122,36 @@ class Events(commands.Cog):
                         logger.info(f"Removed {role_name} from {member.display_name}")
                     except discord.Forbidden:
                         logger.error(f"Missing permissions to remove {role_name}")
-                    except discord.HTTPException as e:
-                        logger.error(f"Failed to remove {role_name}: {e}")
 
     @commands.command(name="setup_pings")
     @commands.has_permissions(administrator=True)
     async def setup_pings(self, ctx):
         """Creates the event ping reaction menu in the current channel."""
-        if ctx.channel.id not in PING_CHANNEL_IDS:
-            await ctx.send(f"⚠️ This channel ID ({ctx.channel.id}) is not listed in `PING_CHANNEL_IDS` in the `.env` file! The menu will deploy, but reactions won't assign roles until you add this channel ID to the config.")
+        channel_id = str(ctx.channel.id)
+        is_boo = channel_id == str(ping_boo)
+        is_zen = channel_id == str(ping_zen)
+
+        if not is_boo and not is_zen:
+            await ctx.send(f"⚠️ This channel ID ({channel_id}) is neither PING_CHANNEL_BOO_ID nor PING_CHANNEL_ZEN_ID in the `.env` file! Setup aborted.")
+            return
 
         description = "React below to opt-in to automated event reminders!\n\n"
         
-        for category, roles in self.event_roles.items():
+        categories_to_show = ["BOTH"]
+        if is_boo:
+            categories_to_show.insert(0, "BOO")
+        elif is_zen:
+            categories_to_show.insert(0, "ZEN")
+
+        emojis_to_seed = []
+
+        for category in categories_to_show:
+            roles = self.event_roles.get(category, {})
             if roles:
                 description += f"**{category} Events**\n"
                 for emoji, role_name in roles.items():
                     description += f"{emoji} : {role_name}\n"
+                    emojis_to_seed.append(emoji)
                 description += "\n"
 
         embed = discord.Embed(
@@ -145,12 +162,11 @@ class Events(commands.Cog):
         msg = await ctx.send(embed=embed)
         
         # Seed the emojis
-        for category, roles in self.event_roles.items():
-            for emoji in roles.keys():
-                try:
-                    await msg.add_reaction(emoji)
-                except discord.HTTPException:
-                    logger.warning(f"Failed to add reaction emoji: {emoji}")
+        for emoji in emojis_to_seed:
+            try:
+                await msg.add_reaction(emoji)
+            except discord.HTTPException:
+                logger.warning(f"Failed to add reaction emoji: {emoji}")
 
     @commands.command(name="syncPings")
     @commands.has_permissions(administrator=True)
