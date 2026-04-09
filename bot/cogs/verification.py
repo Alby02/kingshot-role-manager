@@ -3,6 +3,7 @@ from discord.ext import commands
 import aiohttp
 import logging
 from database import register_user, update_ign
+from role_sync import sync_roles_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +22,17 @@ class ConfirmView(discord.ui.View):
 
         try:
             register_user(self.discord_id, self.game_id, self.ign)
-            # Public success message
-            await interaction.response.send_message(f"✅ Success! Your account **{self.ign}** has been linked.")
-            
-            # Disable buttons and close the prompt
+
+            # Disable buttons
             for child in self.children:
                 child.disabled = True
             await interaction.message.edit(view=self)
+
+            await interaction.response.send_message(f"✅ Success! Your account **{self.ign}** has been linked.")
+
+            # Auto-sync roles based on DB state
+            if interaction.guild:
+                await sync_roles_for_user(interaction.guild, self.discord_id)
             
         except Exception as e:
             logger.error(f"DB Error: {e}")
@@ -94,6 +99,9 @@ class Verification(commands.Cog):
         success = update_ign(ctx.author.id, player_id, ign)
         if success:
             await msg.edit(content=f"✅ Successfully refreshed! Your IGN is now listed as **{ign}**.")
+            # Re-sync roles in case alliance data changed
+            if ctx.guild:
+                await sync_roles_for_user(ctx.guild, ctx.author.id)
         else:
             await msg.edit(content=f"❌ Error: The account ID `{player_id}` is not linked to your Discord profile.")
 

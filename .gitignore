@@ -1,5 +1,18 @@
-.env
+# Environment & secrets
+bot/.env
+
+# Python
 .venv/
-data/
-*.db
 __pycache__/
+*.pyc
+
+# Database
+*.db
+
+# Data directories
+bot/data/
+roster-script/output/
+
+# OS
+.DS_Store
+Thumbs.db

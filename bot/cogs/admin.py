@@ -1,10 +1,15 @@
 import discord
 from discord.ext import commands
 import logging
-from database import get_user_igns, register_user
+from database import get_user_igns, register_user, set_diplomat, get_account_by_game_id
+from role_sync import sync_roles_for_user
 from cogs.verification import Verification
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Confirmation views
+# ---------------------------------------------------------------------------
 
 class SetPlayerConfirmView(discord.ui.View):
     def __init__(self, admin_id: int, target_member: discord.Member, game_id: str, ign: str):
@@ -22,10 +27,13 @@ class SetPlayerConfirmView(discord.ui.View):
 
         try:
             register_user(self.target_member.id, self.game_id, self.ign)
-            await interaction.response.send_message(f"✅ Success! Linked account **{self.ign}** to {self.target_member.mention}.")
             for child in self.children:
                 child.disabled = True
             await interaction.message.edit(view=self)
+            await interaction.response.send_message(f"✅ Success! Linked account **{self.ign}** to {self.target_member.mention}.")
+            # Auto-sync roles for the target user
+            if interaction.guild:
+                await sync_roles_for_user(interaction.guild, self.target_member.id)
         except Exception as e:
             logger.error(f"Failed to setplayer: {e}")
             await interaction.response.send_message("❌ Database error occurred while forcing assignment.", ephemeral=True)
@@ -39,6 +47,10 @@ class SetPlayerConfirmView(discord.ui.View):
         for child in self.children:
             child.disabled = True
         await interaction.message.edit(content="❌ Setplayer cancelled.", view=self)
+
+# ---------------------------------------------------------------------------
+# Admin cog
+# ---------------------------------------------------------------------------
 
 class Admin(commands.Cog):
     def __init__(self, bot):
@@ -62,11 +74,12 @@ class Admin(commands.Cog):
         )
         
         for account in accounts:
-            game_id, ign, alliance, rank = account
+            game_id, ign, alliance, rank, is_diplomat = account
             alliance_str = alliance if alliance else "None"
             rank_str = rank if rank else "None"
+            diplomat_str = " 🤝 Diplomat" if is_diplomat else ""
             embed.add_field(
-                name=f"🎮 {ign} (ID: {game_id})",
+                name=f"🎮 {ign} (ID: {game_id}){diplomat_str}",
                 value=f"**Alliance:** {alliance_str} | **Rank:** {rank_str}",
                 inline=False
             )
@@ -101,6 +114,76 @@ class Admin(commands.Cog):
     async def setplayer_error(self, ctx, error):
         if isinstance(error, commands.MissingRole):
             await ctx.send("❌ You do not have the `Verifier` role required to use this command.")
+
+    # -----------------------------------------------------------------------
+    # Diplomat management
+    # -----------------------------------------------------------------------
+
+    def _has_officer_permission(self, member: discord.Member) -> bool:
+        """Check if the member has R4, R5, or Administrator permission."""
+        if member.guild_permissions.administrator:
+            return True
+        role_names = {r.name for r in member.roles}
+        return "R4" in role_names or "R5" in role_names
+
+    @commands.command(name="setdiplomat")
+    async def setdiplomat(self, ctx, game_id: str = None):
+        """Mark a game account as Diplomat (R4/R5/Admin only)."""
+        if not self._has_officer_permission(ctx.author):
+            await ctx.send("❌ Only **R4**, **R5**, or **Administrators** can use this command.")
+            return
+
+        if not game_id:
+            await ctx.send("Usage: `!setdiplomat <GameID>`")
+            return
+
+        account = get_account_by_game_id(game_id)
+        if not account:
+            await ctx.send(f"❌ No game account found with ID `{game_id}`.")
+            return
+
+        game_id, ign, discord_id, alliance, rank, is_diplomat = account
+
+        if is_diplomat:
+            await ctx.send(f"ℹ️ **{ign}** is already marked as Diplomat.")
+            return
+
+        set_diplomat(game_id, True)
+        await ctx.send(f"✅ **{ign}** is now marked as **Diplomat**.")
+
+        # Sync roles if the account is linked to a Discord user
+        if discord_id and ctx.guild:
+            await sync_roles_for_user(ctx.guild, discord_id)
+
+    @commands.command(name="removediplomat")
+    async def removediplomat(self, ctx, game_id: str = None):
+        """Remove Diplomat status from a game account (R4/R5/Admin only)."""
+        if not self._has_officer_permission(ctx.author):
+            await ctx.send("❌ Only **R4**, **R5**, or **Administrators** can use this command.")
+            return
+
+        if not game_id:
+            await ctx.send("Usage: `!removediplomat <GameID>`")
+            return
+
+        account = get_account_by_game_id(game_id)
+        if not account:
+            await ctx.send(f"❌ No game account found with ID `{game_id}`.")
+            return
+
+        game_id, ign, discord_id, alliance, rank, is_diplomat = account
+
+        if not is_diplomat:
+            await ctx.send(f"ℹ️ **{ign}** is not currently a Diplomat.")
+            return
+
+        set_diplomat(game_id, False)
+        await ctx.send(f"✅ Removed **Diplomat** status from **{ign}**.")
+
+        # Sync roles if the account is linked to a Discord user
+        if discord_id and ctx.guild:
+            await sync_roles_for_user(ctx.guild, discord_id)
+
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

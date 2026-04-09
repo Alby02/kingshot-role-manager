@@ -15,14 +15,14 @@ class KingshotBot(commands.Bot):
         super().__init__(command_prefix='!', intents=intents)
 
     async def setup_hook(self):
-        await self.load_extension('cogs.roles')
-        logger.info("Loaded extension: cogs.roles")
         await self.load_extension('cogs.verification')
         logger.info("Loaded extension: cogs.verification")
         await self.load_extension('cogs.events')
         logger.info("Loaded extension: cogs.events")
         await self.load_extension('cogs.admin')
         logger.info("Loaded extension: cogs.admin")
+        await self.load_extension('cogs.reconciliation')
+        logger.info("Loaded extension: cogs.reconciliation")
 
     async def on_ready(self):
         logger.info(f'Logged in as {self.user} (ID: {self.user.id})')

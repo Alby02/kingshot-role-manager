@@ -1,12 +1,6 @@
 FROM ghcr.io/astral-sh/uv:latest AS uv_base
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY --from=uv_base /uv /uvx /bin/
 WORKDIR /app
 

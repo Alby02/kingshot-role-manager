@@ -1,0 +1,65 @@
+# Kingshot Roster Extraction Script
+
+A standalone CLI tool that extracts alliance roster data from screen recordings of the Kingshot alliance member list. It uses FFmpeg for frame extraction and Tesseract OCR for text recognition.
+
+## Prerequisites
+
+Install these system dependencies:
+
+### Windows
+- **FFmpeg**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
+- **Tesseract-OCR**: Download from [UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki) and add to PATH
+
+### Linux (Debian/Ubuntu)
+```bash
+sudo apt-get install ffmpeg tesseract-ocr tesseract-ocr-eng
+```
+
+### macOS
+```bash
+brew install ffmpeg tesseract
+```
+
+## Installation
+
+```bash
+cd roster-script
+uv sync
+```
+
+## Usage
+
+```bash
+# Basic usage
+uv run roster video.mp4 --alliance BOO
+
+# Specify output file
+uv run roster video.mp4 --alliance ZEN --output zen_roster.json
+
+# Extract more frames per second for fast-scrolling videos
+uv run roster video.mp4 --alliance BOO --fps 2
+
+# Keep extracted frame images for debugging
+uv run roster video.mp4 --alliance BOO --keep-frames
+```
+
+## Output Format
+
+The script outputs a JSON array that can be uploaded directly to the
+`#roster-updates` Discord channel for the bot to process:
+
+```json
+[
+  {"ign": "DarkLord99", "rank": "R4", "alliance": "BOO"},
+  {"ign": "ShadowKnight", "rank": "R3", "alliance": "BOO"},
+  {"ign": "NovaStrike", "rank": "R2", "alliance": "BOO"}
+]
+```
+
+## Workflow
+
+1. Record a screen capture of scrolling through the alliance member list in Kingshot
+2. Run this script on the recording
+3. Review the output JSON for any OCR errors
+4. Upload the JSON file to `#roster-updates` on Discord
+5. The bot will automatically process it and sync roles
