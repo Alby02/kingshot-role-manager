@@ -7,7 +7,7 @@ This module is called by verification, reconciliation, and admin cogs.
 
 import discord
 import logging
-from database import get_discord_user_roles, get_all_linked_discord_ids
+from services.database import get_discord_user_roles, get_all_linked_discord_ids
 
 logger = logging.getLogger(__name__)
 

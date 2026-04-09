@@ -2,8 +2,8 @@ import json
 import logging
 from datetime import datetime, timezone
 import aiohttp
-from database import bulk_update_roster, mark_absent
-from role_sync import sync_all_users
+from services.database import bulk_update_roster, mark_absent
+from services.role_sync import sync_all_users
 
 logger = logging.getLogger(__name__)
 

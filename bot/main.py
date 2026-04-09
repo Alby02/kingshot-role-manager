@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import logging
-from database import init_db
+from services.database import init_db
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('bot')

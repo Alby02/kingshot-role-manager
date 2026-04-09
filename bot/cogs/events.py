@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import logging
-from services.pings import get_pings_config, set_ping_channel
+from services.database import get_all_ping_roles, set_ping_channel
 
 logger = logging.getLogger(__name__)
 
@@ -10,17 +10,14 @@ class PingView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
         
-        config = get_pings_config()
-        self.roles_config = config.get("roles", {})
+        self.roles_config = get_all_ping_roles()
         
-        # Build one select menu if we have categories, or multiple. A single select is easiest.
         options = []
-        for category, emoji_map in self.roles_config.items():
-            for emoji, role_name in emoji_map.items():
+        for category, role_names in self.roles_config.items():
+            for role_name in role_names:
                 options.append(discord.SelectOption(
                     label=role_name,
                     description=f"{category} Ping",
-                    emoji=emoji,
                     value=role_name
                 ))
                 
@@ -58,8 +55,8 @@ class PingView(discord.ui.View):
 
         # Gather all possible ping role names
         all_ping_roles = set()
-        for emoji_map in self.roles_config.values():
-            all_ping_roles.update(emoji_map.values())
+        for role_names in self.roles_config.values():
+            all_ping_roles.update(role_names)
 
         roles_to_add = []
         roles_to_remove = []
@@ -95,30 +92,54 @@ class Events(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
+    def _has_officer_permission(self, member: discord.Member) -> bool:
+        if member.guild_permissions.administrator:
+            return True
+        role_names = {r.name for r in member.roles}
+        return "R4" in role_names or "R5" in role_names
+
     @app_commands.command(name="pings", description="Manage your event ping roles privately.")
     async def pings(self, interaction: discord.Interaction) -> None:
         view = PingView()
         await interaction.response.send_message("Select the event pings you want to be notified for:", view=view, ephemeral=True)
 
-    @app_commands.command(name="set_ping_channel", description="Set the dedicated announcement channel for a specific alliance.")
-    @app_commands.describe(alliance="The alliance (BOO or ZEN)", channel="The channel for announcements")
+    @app_commands.command(name="set_ping_channel", description="Set the dedicated announcement channel for a specific category.")
+    @app_commands.describe(category="The ping category (e.g. BOO, ZEN, BOTH)", channel="The channel for announcements")
     @app_commands.default_permissions(administrator=True)
-    async def set_ping_channel_cmd(self, interaction: discord.Interaction, alliance: str, channel: discord.TextChannel) -> None:
-        alliance = alliance.upper()
-        if alliance not in ["BOO", "ZEN"]:
-            await interaction.response.send_message("❌ Alliance must be BOO or ZEN.", ephemeral=True)
-            return
+    async def set_ping_channel_cmd(self, interaction: discord.Interaction, category: str, channel: discord.TextChannel) -> None:
+        category = category.upper()
             
-        set_ping_channel(alliance, str(channel.id))
-        await interaction.response.send_message(f"✅ Set **{alliance}** event pings to output in {channel.mention}.", ephemeral=True)
+        set_ping_channel(category, str(channel.id))
+        await interaction.response.send_message(f"✅ Set **{category}** event pings to output in {channel.mention}.", ephemeral=True)
 
-    @app_commands.command(name="sync_pings", description="Reloads the event ping configuration from data/pings.json")
+    @app_commands.command(name="create_ping", description="Create a new ping role and assign it to a category (R4/R5/Admin).")
+    @app_commands.describe(category="The category the ping belongs to", role_name="The exact name of the role to create/assign")
     @app_commands.default_permissions(administrator=True)
-    async def sync_pings(self, interaction: discord.Interaction) -> None:
-        # We don't cache locally in the cog anymore, so reading it again validates the file.
-        config = get_pings_config()
-        count = sum(len(roles) for roles in config.get("roles", {}).values())
-        await interaction.response.send_message(f"✅ Validated pings file. Detected {count} ping roles.", ephemeral=True)
+    async def create_ping_role(self, interaction: discord.Interaction, category: str, role_name: str) -> None:
+        if not self._has_officer_permission(interaction.user):
+            await interaction.response.send_message("❌ Only **R4**, **R5**, or **Administrators** can use this command.", ephemeral=True)
+            return
 
+        category = category.upper()
+        
+        # Try to create the role on the server if it doesn't exist
+        guild = interaction.guild
+        if guild:
+            role = discord.utils.get(guild.roles, name=role_name)
+            if not role:
+                try:
+                    await guild.create_role(name=role_name, mentionable=True, reason=f"Created via /create_ping by {interaction.user.display_name}")
+                except Exception as e:
+                    await interaction.response.send_message(f"❌ Failed to create discord role: {e}", ephemeral=True)
+                    return
+
+        from services.database import add_ping_role
+        try:
+            add_ping_role(role_name, category)
+            await interaction.response.send_message(f"✅ Created ping role **{role_name}** and linked it to category **{category}**.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error saving ping role to DB: {e}")
+            await interaction.response.send_message(f"❌ Failed to save to database.", ephemeral=True)
+            
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Events(bot))
