@@ -29,7 +29,7 @@ def _get_role(guild: discord.Guild, name: str) -> discord.Role | None:
     return role
 
 
-async def sync_roles_for_user(guild: discord.Guild, discord_id: int):
+async def sync_roles_for_user(guild: discord.Guild, discord_id: int) -> None:
     """
     Compute the correct set of Discord roles for a single user based on
     their database state, then add/remove roles to match.
@@ -94,7 +94,7 @@ async def sync_roles_for_user(guild: discord.Guild, discord_id: int):
                 logger.error(f"Failed to remove role {role_name}: {e}")
 
 
-async def sync_all_users(guild: discord.Guild) -> dict:
+async def sync_all_users(guild: discord.Guild) -> dict[str, int]:
     """
     Bulk-sync roles for every linked Discord user.
     Returns a summary dict: {"synced": int, "skipped": int, "errors": int}

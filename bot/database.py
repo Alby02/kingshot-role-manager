@@ -7,13 +7,13 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", "data/kingshot.db")
 
-def get_connection():
+def get_connection() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
-def init_db():
+def init_db() -> None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -57,7 +57,7 @@ def init_db():
 # User & Account Registration
 # ---------------------------------------------------------------------------
 
-def register_user(discord_id: int, game_id: str, ign: str):
+def register_user(discord_id: int, game_id: str, ign: str) -> None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -101,7 +101,7 @@ def update_ign(discord_id: int, game_id: str, ign: str) -> bool:
 # Query helpers
 # ---------------------------------------------------------------------------
 
-def get_user_igns(discord_id: int):
+def get_user_igns(discord_id: int) -> list[tuple]:
     """Return all game accounts linked to a Discord user."""
     try:
         conn = get_connection()
@@ -118,7 +118,7 @@ def get_user_igns(discord_id: int):
         if 'conn' in locals() and conn:
             conn.close()
 
-def get_discord_user_roles(discord_id: int) -> dict:
+def get_discord_user_roles(discord_id: int) -> dict[str, set[str] | bool]:
     """
     Aggregate role-relevant info for a Discord user across all their game accounts.
 
@@ -198,7 +198,7 @@ def set_diplomat(game_id: str, is_diplomat: bool) -> bool:
         if 'conn' in locals() and conn:
             conn.close()
 
-def get_account_by_game_id(game_id: str):
+def get_account_by_game_id(game_id: str) -> tuple | None:
     """Return a single game account row or None."""
     try:
         conn = get_connection()
@@ -219,7 +219,7 @@ def get_account_by_game_id(game_id: str):
 # Reconciliation (bulk roster updates)
 # ---------------------------------------------------------------------------
 
-def bulk_update_roster(entries: list[dict], alliance: str, timestamp: str):
+def bulk_update_roster(entries: list[dict[str, str]], alliance: str, timestamp: str) -> bool:
     """
     Batch upsert from a roster JSON.
 
@@ -288,7 +288,7 @@ def mark_absent(alliance: str, timestamp: str) -> int:
         if 'conn' in locals() and conn:
             conn.close()
 
-def get_accounts_by_alliance(alliance: str):
+def get_accounts_by_alliance(alliance: str) -> list[tuple]:
     """Return all game accounts currently in the given alliance."""
     try:
         conn = get_connection()

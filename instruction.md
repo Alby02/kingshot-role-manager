@@ -28,14 +28,13 @@ The bot acts as a "Virtual DOM" for the alliance, mapping in-game accounts to Di
 
 ## 3. Git Workflow & Branching Strategy
 
-The project strictly adheres to a three-branch Git flow. Do not commit directly to base branches.
+The project adheres to a two-branch Git flow. Do not commit directly to base branches.
 * **Base Branches:**
   * `main`: Production-ready code.
-  * `QA`: Stable testing environment.
   * `dev`: Active integration branch for new developments.
 * **Ephemeral Branches:**
   * `feature/#x-featurename`: Cut from `dev` for new features.
-  * `bugfix/#x-bugfix`: Cut from `QA` for bugfixes.
+  * `bugfix/#x-bugfix`: Cut from `dev` for bugfixes.
   * `hotfix/#x-fixname`: Cut from `main` for critical production hotfixes.
 
 ## 4. Project Structure
@@ -47,10 +46,14 @@ kingshot-role-manager/
 │   ├── database.py                   # SQLite schema, queries, migrations
 │   ├── role_sync.py                  # Data-driven Discord role assignment
 │   ├── cogs/
-│   │   ├── verification.py           # !verify, !sync commands
-│   │   ├── events.py                 # Event ping reaction roles
-│   │   ├── admin.py                  # !whois, !setplayer, !setdiplomat, !removediplomat
-│   │   └── reconciliation.py         # JSON upload watcher + roster reconciliation
+│   │   ├── verification.py           # /verify, /sync commands
+│   │   ├── events.py                 # /pings, /set_ping_channel
+│   │   ├── admin.py                  # /whois, /setplayer, etc.
+│   │   └── reconciliation.py         # /upload_roster command
+│   ├── services/
+│   │   ├── kingshot_api.py           # API fetching logic
+│   │   ├── roster.py                 # Roster validation and DB orchestration
+│   │   └── pings.py                  # Pings JSON config management
 │   ├── Containerfile
 │   ├── compose.yaml
 │   ├── pyproject.toml
@@ -99,11 +102,11 @@ Roles are **not** assigned via emoji reactions. They are computed from database 
 | Was in roster but no longer appears | Strip alliance/rank roles, assign `Ex-Member` |
 
 **Role sync is triggered by:**
-* `!verify` — after linking an account
-* `!sync` — after refreshing an IGN
-* `!setplayer` — after admin-linking an account
-* `!setdiplomat` / `!removediplomat` — after toggling diplomat status
-* JSON upload to `#roster-updates` — bulk sync for all linked users
+* `/verify` — after linking an account
+* `/sync` — after refreshing an IGN
+* `/setplayer` — after admin-linking an account
+* `/setdiplomat` / `/removediplomat` — after toggling diplomat status
+* Roster upload via `/upload_roster` — bulk sync for all linked users
 
 ## 7. Environment Variables
 
@@ -112,11 +115,6 @@ Stored in `bot/.env` (git-ignored):
 | Variable | Description |
 |---|---|
 | `DISCORD_TOKEN` | Bot authentication token |
-| `RULES_CHANNEL_ID` | Channel ID for the rules channel |
-| `RULES_MESSAGE_ID` | Message ID for the rules message |
-| `PING_CHANNEL_BOO_ID` | Channel ID for BOO event ping opt-in |
-| `PING_CHANNEL_ZEN_ID` | Channel ID for ZEN event ping opt-in |
-| `ROSTER_CHANNEL_ID` | Channel ID for `#roster-updates` (JSON uploads) |
 | `DB_PATH` | SQLite database path (default: `data/kingshot.db`) |
 
 ## 8. Implementation Phases (Feature Roadmap)
@@ -136,20 +134,20 @@ Stored in `bot/.env` (git-ignored):
 
 ### Phase 3: The Verification Command (`feature/#3-verification-api`) ✅
 * **Goal:** Link game accounts to Discord IDs via web API check.
-* `!verify <PlayerID>` — Validates via `https://kingshot.net/api/player-info`, prompts with interactive buttons, links account in DB, auto-syncs roles.
-* `!sync <PlayerID>` — Force re-sync of a cached IGN from the API.
-* Available to all server members.
+* `/verify <PlayerID>` — Validates via `https://kingshot.net/api/player-info`, prompts with interactive buttons, links account in DB, auto-syncs roles. Available anywhere on the server.
+* `/sync <PlayerID>` — Force re-sync of a cached IGN from the API. Available anywhere on the server.
 
 ### Phase 4: Event Ping Roles (`feature/#4-event-pings`) ✅
-* Event ping opt-in via reaction roles in `set-pings` channels (BOO and ZEN).
-* Bot posts/manages reaction menus, and assigns ping roles like `Bear1-BOO`, `Arena`, etc.
+* **Goal:** Manage event ping participation via ephemeral menus.
+* Ephemeral slash command `/pings` allows users to privately view available pings and click buttons/select menus to opt-in/opt-out.
 * Configuration stored in `data/pings.json`.
+* `/set_ping_channel <channel> <alliance>` — Admin command to dynamically set the dedicated channel where event ping announcements are sent.
 
 ### Phase 5: Administration & Lookups (`feature/#5-admin-tools`) ✅
-* `!whois <@User>` — Lookup all linked Kingshot accounts for a Discord user. Displays IGN, alliance, rank, diplomat status.
-* `!setplayer <@User> <GameID>` — Restricted to `Verifier` role. Admin-links accounts without user confirmation.
-* `!setdiplomat <GameID>` — R4/R5/Admin only. Marks a game account as Diplomat, auto-syncs roles.
-* `!removediplomat <GameID>` — R4/R5/Admin only. Removes diplomat status.
+* `/whois <@User>` — Lookup all linked Kingshot accounts for a Discord user. Displays IGN, alliance, rank, diplomat status.
+* `/setplayer <@User> <GameID>` — Admin only. Admin-links accounts without user confirmation.
+* `/setdiplomat <GameID>` — R4/R5/Admin only. Marks a game account as Diplomat, auto-syncs roles.
+* `/removediplomat <GameID>` — R4/R5/Admin only. Removes diplomat status.
 
 ### Phase 6: Roster Script (`roster-script/`) ✅
 * **Goal:** Local CLI tool to extract alliance roster from screen recordings.
@@ -162,13 +160,13 @@ Stored in `bot/.env` (git-ignored):
 
 ### Phase 7: State Reconciliation (`feature/#6-project-restructure`) ✅
 * **Goal:** Diff roster JSON against the database to assign roles and detect kicks.
-* Bot watches `#roster-updates` for `.json` file uploads (R4/R5/Admin only).
+* Admins (R4/R5/Admin) use `/upload_roster <file> <alliance>` to upload a `.json` roster file securely.
 * **Logic:**
   1. Validate uploaded JSON structure.
   2. Bulk-upsert all roster entries (update alliance, rank, last_updated).
   3. Mark absent accounts: any account in that alliance whose `last_updated < scan_timestamp` gets `alliance = NULL`.
   4. Bulk sync Discord roles for all linked users via `role_sync.sync_all_users()`.
-  5. Post a summary embed in the channel (entries processed, removed, role sync stats).
+  5. Bot replies with a summary embed (entries processed, removed, role sync stats).
 
 ### Phase 8: Event System Overhaul (`feature/#8-event-system`) 🔜
 * **Goal:** Full event scheduling and ping management system.
@@ -193,5 +191,5 @@ podman compose up -d --build
 cd roster-script/
 uv sync
 uv run roster video.mp4 --alliance BOO
-# Then upload the output .json to #roster-updates on Discord
+# Then upload the output .json to Discord using the /upload_roster command
 ```

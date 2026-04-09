@@ -1,21 +1,22 @@
 import discord
 from discord.ext import commands
-import aiohttp
+from discord import app_commands
 import logging
 from database import register_user, update_ign
 from role_sync import sync_roles_for_user
+from services.kingshot_api import fetch_ign
 
 logger = logging.getLogger(__name__)
 
 class ConfirmView(discord.ui.View):
-    def __init__(self, discord_id: int, game_id: str, ign: str):
+    def __init__(self, discord_id: int, game_id: str, ign: str) -> None:
         super().__init__(timeout=60)
         self.discord_id = discord_id
         self.game_id = game_id
         self.ign = ign
 
     @discord.ui.button(label="Yes, this is me", style=discord.ButtonStyle.green, custom_id="confirm_yes")
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if interaction.user.id != self.discord_id:
             await interaction.response.send_message("This prompt is not for you.", ephemeral=True)
             return
@@ -23,14 +24,12 @@ class ConfirmView(discord.ui.View):
         try:
             register_user(self.discord_id, self.game_id, self.ign)
 
-            # Disable buttons
             for child in self.children:
                 child.disabled = True
             await interaction.message.edit(view=self)
 
             await interaction.response.send_message(f"✅ Success! Your account **{self.ign}** has been linked.")
 
-            # Auto-sync roles based on DB state
             if interaction.guild:
                 await sync_roles_for_user(interaction.guild, self.discord_id)
             
@@ -39,7 +38,7 @@ class ConfirmView(discord.ui.View):
             await interaction.response.send_message("❌ Database error occurred while linking your account.", ephemeral=True)
             
     @discord.ui.button(label="No, cancel", style=discord.ButtonStyle.red, custom_id="confirm_no")
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if interaction.user.id != self.discord_id:
             await interaction.response.send_message("This prompt is not for you.", ephemeral=True)
             return
@@ -49,62 +48,40 @@ class ConfirmView(discord.ui.View):
         await interaction.message.edit(content="❌ Verification cancelled.", view=self)
 
 class Verification(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    async def fetch_ign(self, player_id: str) -> str:
-        url = f"https://kingshot.net/api/player-info?playerId={player_id}"
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if data.get("status") == "success" and "data" in data and "name" in data["data"]:
-                            return data["data"]["name"]
-            except Exception as e:
-                logger.error(f"API Fetch Error: {e}")
-        return None
-
-    @commands.command(name="verify")
-    async def verify(self, ctx, player_id: str = None):
-        """Link a Kingshot account to your Discord."""
-        if not player_id:
-            await ctx.send("Please provide your Player ID. Usage: `!verify <PlayerID>`")
-            return
-
-        msg = await ctx.send("🔍 Searching Kingshot database...")
-
-        ign = await self.fetch_ign(player_id)
+    @app_commands.command(name="verify", description="Link a Kingshot account to your Discord.")
+    @app_commands.describe(player_id="Your Kingshot Player ID")
+    async def verify(self, interaction: discord.Interaction, player_id: str) -> None:
+        await interaction.response.defer()
+        
+        ign = await fetch_ign(player_id)
         if not ign:
-            await msg.edit(content=f"❌ Could not find an account with ID `{player_id}`. Please check and try again.")
+            await interaction.followup.send(f"❌ Could not find an account with ID `{player_id}`. Please check and try again.")
             return
 
-        view = ConfirmView(ctx.author.id, player_id, ign)
-        await msg.edit(content=f"Found account **{ign}**. Is this your username?", view=view)
+        view = ConfirmView(interaction.user.id, player_id, ign)
+        await interaction.followup.send(f"Found account **{ign}**. Is this your username?", view=view)
 
-    @commands.command(name="sync")
-    async def sync(self, ctx, player_id: str = None):
-        """Force an API re-sync of a cached IGN."""
-        if not player_id:
-            await ctx.send("Please provide the Player ID to sync. Usage: `!sync <PlayerID>`")
-            return
+    @app_commands.command(name="sync", description="Force an API re-sync of a cached IGN.")
+    @app_commands.describe(player_id="The Kingshot Player ID to sync")
+    async def sync(self, interaction: discord.Interaction, player_id: str) -> None:
+        await interaction.response.defer()
 
-        msg = await ctx.send("🔍 Fetching latest info...")
-
-        ign = await self.fetch_ign(player_id)
+        ign = await fetch_ign(player_id)
         if not ign:
-            await msg.edit(content=f"❌ Could not find an account with ID `{player_id}`.")
+            await interaction.followup.send(f"❌ Could not find an account with ID `{player_id}`.")
             return
 
-        success = update_ign(ctx.author.id, player_id, ign)
+        success = update_ign(interaction.user.id, player_id, ign)
         if success:
-            await msg.edit(content=f"✅ Successfully refreshed! Your IGN is now listed as **{ign}**.")
-            # Re-sync roles in case alliance data changed
-            if ctx.guild:
-                await sync_roles_for_user(ctx.guild, ctx.author.id)
+            await interaction.followup.send(f"✅ Successfully refreshed! Your IGN is now listed as **{ign}**.")
+            if interaction.guild:
+                await sync_roles_for_user(interaction.guild, interaction.user.id)
         else:
-            await msg.edit(content=f"❌ Error: The account ID `{player_id}` is not linked to your Discord profile.")
+            await interaction.followup.send(f"❌ Error: The account ID `{player_id}` is not linked to your Discord profile.")
 
-
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Verification(bot))
+

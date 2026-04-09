@@ -14,7 +14,7 @@ class KingshotBot(commands.Bot):
         intents.members = True
         super().__init__(command_prefix='!', intents=intents)
 
-    async def setup_hook(self):
+    async def setup_hook(self) -> None:
         await self.load_extension('cogs.verification')
         logger.info("Loaded extension: cogs.verification")
         await self.load_extension('cogs.events')
@@ -23,14 +23,16 @@ class KingshotBot(commands.Bot):
         logger.info("Loaded extension: cogs.admin")
         await self.load_extension('cogs.reconciliation')
         logger.info("Loaded extension: cogs.reconciliation")
+        await self.tree.sync()
+        logger.info("Synced app commands globally.")
 
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
         logger.info('Initializing SQLite Database...')
         init_db()
         logger.info('Initialization complete. Bot is ready.')
 
-def main():
+def main() -> None:
     token = os.environ.get('DISCORD_TOKEN')
     if not token:
         logger.error("DISCORD_TOKEN environment variable is not set. Please provide it via .env file or environment.")
