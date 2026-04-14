@@ -28,7 +28,7 @@ class KingshotBot(commands.Bot):
 
     async def on_ready(self) -> None:
         logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
-        logger.info('Initializing SQLite Database...')
+        logger.info('Initializing PostgreSQL schema...')
         init_db()
         logger.info('Initialization complete. Bot is ready.')
 

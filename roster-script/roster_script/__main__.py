@@ -2,10 +2,10 @@
 CLI entry point for the roster extraction script.
 
 Usage:
-    roster <video_path> --alliance BOO|ZEN [--output roster.json] [--fps 1]
+    roster <video_path> [--output roster.json] [--fps 1]
 
 Or run directly:
-    python -m roster_script <video_path> --alliance BOO|ZEN
+    python -m roster_script <video_path>
 """
 
 import argparse
@@ -23,27 +23,26 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  roster video.mp4 --alliance BOO
-  roster video.mp4 --alliance ZEN --output zen_roster.json --fps 2
+  roster video.mp4
+  roster video.mp4 --output roster.json --fps 2
         """,
     )
     parser.add_argument("video", help="Path to the screen recording (.mp4)")
     parser.add_argument(
-        "--alliance",
-        required=True,
-        choices=["BOO", "ZEN"],
-        help="Alliance tag to assign to all extracted members",
-    )
-    parser.add_argument(
         "--output",
         default=None,
-        help="Output JSON file path (default: <alliance>_roster.json)",
+        help="Output JSON file path (default: roster.json)",
     )
     parser.add_argument(
         "--fps",
         type=int,
         default=1,
         help="Frames to extract per second (default: 1)",
+    )
+    parser.add_argument(
+        "--frame-dir",
+        default=None,
+        help="Directory to write extracted frames to (default: a system temp folder)",
     )
     parser.add_argument(
         "--keep-frames",
@@ -57,11 +56,11 @@ Examples:
         print(f"Error: Video file not found: {args.video}", file=sys.stderr)
         sys.exit(1)
 
-    output_path = args.output or f"{args.alliance.lower()}_roster.json"
+    output_path = args.output or "roster.json"
 
     # Step 1: Extract frames
     print(f"📹 Extracting frames from {args.video} at {args.fps} fps...")
-    frames = extract_frames(args.video, fps=args.fps)
+    frames = extract_frames(args.video, fps=args.fps, output_dir=args.frame_dir)
     print(f"   Extracted {len(frames)} frames.")
 
     if not frames:
@@ -70,7 +69,7 @@ Examples:
 
     # Step 2: OCR + parse + deduplicate
     print(f"🔍 Running OCR on {len(frames)} frames...")
-    roster = process_frames(frames, alliance=args.alliance)
+    roster = process_frames(frames)
     print(f"   Found {len(roster)} unique members.")
 
     # Step 3: Write output

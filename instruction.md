@@ -1,195 +1,87 @@
-# Kingshot Alliance Manager — AI Agent Specification
+# Kingshot Role Manager - Micro Documentation
 
-## 1. Project Overview
+## Scope
+This repository has two components:
 
-This project manages a mobile game alliance (BOO) and its academy (ZEN) through two independent components:
+1. `bot/`: Discord bot that verifies players, reconciles roster uploads, and syncs Discord roles.
+2. `roster-script/`: Local OCR CLI that extracts roster JSON from video captures.
 
-1. **Bot** (`bot/`) — A Discord bot deployed on a VPS via Podman. It manages roles, links Discord users to Kingshot accounts, and automatically reconciles alliance rosters uploaded as JSON files.
-2. **Roster Script** (`roster-script/`) — A local CLI tool that processes screen recordings of the Kingshot alliance member list, extracting roster data into JSON via FFmpeg + Tesseract OCR.
+## Runtime Stack
 
-The bot acts as a "Virtual DOM" for the alliance, mapping in-game accounts to Discord users via a SQLite database. Roles are assigned automatically based on database state — not via emoji reactions.
+### Bot
+- Python 3.12+
+- `discord.py`
+- `aiohttp`
+- `psycopg` (PostgreSQL)
+- Container build via `Containerfile`
+- Primary deployment target: k3s (Kubernetes)
 
-## 2. Tech Stack & Environment
+### Roster Script
+- Python 3.12+
+- `pillow`, `pytesseract`, `thefuzz`
+- Requires local FFmpeg + Tesseract
 
-### Bot (`bot/`)
-* **Language:** Python 3.12+
-* **Framework:** `discord.py`
-* **Package Manager:** `uv`
-* **Database:** SQLite3 (file-based, volume-mapped)
-* **HTTP Client:** `aiohttp` (for Kingshot API calls)
-* **Deployment:** Podman container (`python:3.12-slim`)
+## Source Layout
+- `bot/main.py`: bot entrypoint and cog loading
+- `bot/cogs/verification.py`: `/verify`, `/sync`
+- `bot/cogs/admin.py`: `/whois`, `/setplayer`, `/setdiplomat`, `/removediplomat`
+- `bot/cogs/reconciliation.py`: `/upload_roster`
+- `bot/cogs/events.py`: ping role commands
+- `bot/services/database.py`: PostgreSQL schema initialization and DB helpers
+- `bot/services/role_sync.py`: data-driven role assignment
+- `bot/services/roster.py`: JSON validation, reconciliation orchestration
+- `bot/db/schema.sql`: SQL bootstrap for PostgreSQL
+- `k8s/`: Kubernetes manifests for deployment
 
-### Roster Script (`roster-script/`)
-* **Language:** Python 3.12+
-* **Package Manager:** `uv`
-* **Dependencies:** `pillow`, `pytesseract`, `thefuzz`
-* **System Requirements:** FFmpeg, Tesseract-OCR (installed locally)
-* **Runs:** Locally on the operator's machine
+## Environment Variables (Bot)
+- `DISCORD_TOKEN`: Discord bot token
+- `DATABASE_URL`: Postgres connection string (example: `postgresql://user:password@host:5432/kingshot_role_manager`)
 
-## 3. Git Workflow & Branching Strategy
+## Data Model (PostgreSQL)
 
-The project adheres to a two-branch Git flow. Do not commit directly to base branches.
-* **Base Branches:**
-  * `main`: Production-ready code.
-  * `dev`: Active integration branch for new developments.
-* **Ephemeral Branches:**
-  * `feature/#x-featurename`: Cut from `dev` for new features.
-  * `bugfix/#x-bugfix`: Cut from `dev` for bugfixes.
-  * `hotfix/#x-fixname`: Cut from `main` for critical production hotfixes.
+### `players`
+- `game_id` TEXT PRIMARY KEY
+- `discord_id` BIGINT NOT NULL
+- `ign` TEXT NOT NULL
+- `kingdom` INTEGER DEFAULT 0
+- `level` INTEGER DEFAULT 0
+- `is_diplomat` BOOLEAN DEFAULT FALSE
+- `has_been_in_alliance` BOOLEAN DEFAULT FALSE
 
-## 4. Project Structure
+### `roster`
+- `ign` TEXT PRIMARY KEY
+- `alliance` TEXT NOT NULL
+- `rank` TEXT NOT NULL
+- `last_updated` TIMESTAMPTZ NOT NULL
 
-```
-kingshot-role-manager/
-├── bot/                              # Discord bot (runs on VPS)
-│   ├── main.py                       # Bot entry point
-│   ├── database.py                   # SQLite schema, queries, migrations
-│   ├── role_sync.py                  # Data-driven Discord role assignment
-│   ├── cogs/
-│   │   ├── verification.py           # /verify, /sync commands
-│   │   ├── events.py                 # /pings, /set_ping_channel
-│   │   ├── admin.py                  # /whois, /setplayer, etc.
-│   │   └── reconciliation.py         # /upload_roster command
-│   ├── services/
-│   │   ├── kingshot_api.py           # API fetching logic
-│   │   ├── roster.py                 # Roster validation and DB orchestration
-│   │   └── pings.py                  # Pings JSON config management
-│   ├── Containerfile
-│   ├── compose.yaml
-│   ├── pyproject.toml
-│   └── data/
-│       └── pings.json                # Event ping role configuration
-│
-├── roster-script/                    # OCR extraction tool (runs locally)
-│   ├── roster_script/
-│   │   ├── __main__.py               # CLI entry point
-│   │   ├── extractor.py              # FFmpeg frame extraction
-│   │   └── ocr.py                    # Tesseract OCR + regex parsing + fuzzy dedup
-│   ├── pyproject.toml
-│   └── README.md
-│
-├── instruction.md
-├── .gitignore
-└── LICENSE
-```
+### `ping_channels`
+- `category` TEXT PRIMARY KEY
+- `channel_id` TEXT NOT NULL
 
-## 5. Database Schema
+### `ping_roles`
+- `role_name` TEXT PRIMARY KEY
+- `category` TEXT NOT NULL
 
-Flattened relational structure mapping multiple game accounts to single Discord users.
+## Command Behavior Notes
 
-**Table 1: `discord_users`**
-* `discord_id` (Primary Key, Integer)
+### `/upload_roster`
+- Requires officer permission (Admin, R4, or R5).
+- Requires two inputs: JSON file + alliance selection (`BOO` or `ZEN`).
+- JSON entries must contain `ign`; `rank` is optional but validated when present.
+- `alliance` inside each JSON row is optional. If present, it must match the slash command alliance.
+- Reconciliation flow:
+  1. Validate payload
+  2. Upsert roster rows for selected alliance
+  3. Remove absent rows by timestamp diff
+  4. Run role sync for linked Discord users
 
-**Table 2: `game_accounts`**
-* `game_id` (Primary Key, String) — The Kingshot Player ID
-* `ign` (String) — In-Game Name
-* `discord_id` (Foreign Key -> discord_users.discord_id, nullable)
-* `alliance` (String, nullable) — `'BOO'`, `'ZEN'`, or `NULL`
-* `rank` (String, nullable) — `'R1'`, `'R2'`, `'R3'`, `'R4'`, `'R5'`
-* `is_diplomat` (Integer, default 0) — `1` if the account is marked as Diplomat
-* `last_updated` (Datetime) — Timestamp of the last roster scan this account appeared in
+## Role Sync Summary
+- Active roster player -> `Member` + alliance role + rank role
+- Linked player never seen in roster -> `Guest`
+- Previously seen in roster, now absent -> `Ex-Member`
+- Diplomat flag adds `Diplomat`
 
-## 6. Role Assignment Model
-
-Roles are **not** assigned via emoji reactions. They are computed from database state and applied automatically after verification, roster reconciliation, or admin commands.
-
-| Condition | Discord Roles Assigned |
-|---|---|
-| Verified via `!verify`, no alliance data | `Guest` |
-| Active in BOO roster | `Member`, `BOO`, rank role (R1–R5) |
-| Active in ZEN roster | `Member`, `ZEN`, rank role (R1–R5) |
-| Marked as diplomat by R4/R5 | `Diplomat` (additive, stacks with above) |
-| Was in roster but no longer appears | Strip alliance/rank roles, assign `Ex-Member` |
-
-**Role sync is triggered by:**
-* `/verify` — after linking an account
-* `/sync` — after refreshing an IGN
-* `/setplayer` — after admin-linking an account
-* `/setdiplomat` / `/removediplomat` — after toggling diplomat status
-* Roster upload via `/upload_roster` — bulk sync for all linked users
-
-## 7. Environment Variables
-
-Stored in `bot/.env` (git-ignored):
-
-| Variable | Description |
-|---|---|
-| `DISCORD_TOKEN` | Bot authentication token |
-| `DB_PATH` | SQLite database path (default: `data/kingshot.db`) |
-
-## 8. Implementation Phases (Feature Roadmap)
-
-### Phase 1: Infrastructure & DB (`feature/#1-infrastructure`) ✅
-* Initialize the project using `uv init`.
-* Set up `discord.py` with an intents-enabled bot (Message Content and Members intents).
-* Write the initialization logic for the SQLite database.
-* Write the Containerfile using `python:3.12-slim`.
-* Create the `compose.yaml` file mapping the SQLite volume to the host.
-
-### Phase 2: Data-Driven Role Assignment (`feature/#6-project-restructure`) ✅
-* **Replaces the old reaction-role system.**
-* Roles (`Guest`, `Member`, `Diplomat`, `Ex-Member`, alliance tags, ranks) are computed from database state via `role_sync.py`.
-* Role sync is called automatically after verification, reconciliation, and admin commands.
-* No reaction-based role assignment for Guest/Diplomat/Member.
-
-### Phase 3: The Verification Command (`feature/#3-verification-api`) ✅
-* **Goal:** Link game accounts to Discord IDs via web API check.
-* `/verify <PlayerID>` — Validates via `https://kingshot.net/api/player-info`, prompts with interactive buttons, links account in DB, auto-syncs roles. Available anywhere on the server.
-* `/sync <PlayerID>` — Force re-sync of a cached IGN from the API. Available anywhere on the server.
-
-### Phase 4: Event Ping Roles (`feature/#4-event-pings`) ✅
-* **Goal:** Manage event ping participation via ephemeral menus.
-* Ephemeral slash command `/pings` allows users to privately view available pings and click buttons/select menus to opt-in/opt-out.
-* Configuration stored in `data/pings.json`.
-* `/set_ping_channel <channel> <alliance>` — Admin command to dynamically set the dedicated channel where event ping announcements are sent.
-
-### Phase 5: Administration & Lookups (`feature/#5-admin-tools`) ✅
-* `/whois <@User>` — Lookup all linked Kingshot accounts for a Discord user. Displays IGN, alliance, rank, diplomat status.
-* `/setplayer <@User> <GameID>` — Admin only. Admin-links accounts without user confirmation.
-* `/setdiplomat <GameID>` — R4/R5/Admin only. Marks a game account as Diplomat, auto-syncs roles.
-* `/removediplomat <GameID>` — R4/R5/Admin only. Removes diplomat status.
-
-### Phase 6: Roster Script (`roster-script/`) ✅
-* **Goal:** Local CLI tool to extract alliance roster from screen recordings.
-* **Runs locally**, not on the VPS. Separate `pyproject.toml`.
-* Uses FFmpeg to extract frames (1 fps default, configurable).
-* Uses Tesseract OCR to read rank headers and player names.
-* Uses fuzzy string matching (`thefuzz`) to deduplicate across frames.
-* Outputs JSON: `[{"ign": "DarkLord99", "rank": "R4", "alliance": "BOO"}]`
-* Usage: `uv run roster video.mp4 --alliance BOO --output roster.json`
-
-### Phase 7: State Reconciliation (`feature/#6-project-restructure`) ✅
-* **Goal:** Diff roster JSON against the database to assign roles and detect kicks.
-* Admins (R4/R5/Admin) use `/upload_roster <file> <alliance>` to upload a `.json` roster file securely.
-* **Logic:**
-  1. Validate uploaded JSON structure.
-  2. Bulk-upsert all roster entries (update alliance, rank, last_updated).
-  3. Mark absent accounts: any account in that alliance whose `last_updated < scan_timestamp` gets `alliance = NULL`.
-  4. Bulk sync Discord roles for all linked users via `role_sync.sync_all_users()`.
-  5. Bot replies with a summary embed (entries processed, removed, role sync stats).
-
-### Phase 8: Event System Overhaul (`feature/#8-event-system`) 🔜
-* **Goal:** Full event scheduling and ping management system.
-* **Planned features:**
-  * Bot sends scheduled pings (recurring or one-time, times in UTC+0).
-  * Web dashboard to add/remove events, manage schedules, create/delete ping roles.
-  * User opt-in via reactions in BOO/ZEN set-pings channels.
-  * New "Ping Updates" role: notifies users when ping roles are added/changed.
-  * Pings can be enabled/disabled independently of role existence.
-  * Dedicated ping channel for outgoing pings.
-
-## 9. Deployment
-
-### Bot (VPS)
-```bash
-cd bot/
-podman compose up -d --build
-```
-
-### Roster Script (local)
-```bash
-cd roster-script/
-uv sync
-uv run roster video.mp4 --alliance BOO
-# Then upload the output .json to Discord using the /upload_roster command
-```
+## Deployment Summary
+- Kubernetes (k3s) is the main deployment path.
+- Use manifests in `k8s/` and provide `DISCORD_TOKEN` + `DATABASE_URL` through secret data.
+- Local container runs can still use `bot/compose.yaml` for testing with a local Postgres container.

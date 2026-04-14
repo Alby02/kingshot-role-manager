@@ -106,16 +106,15 @@ def deduplicate(entries: list[dict]) -> list[dict]:
     return unique
 
 
-def process_frames(frame_paths: list[str], alliance: str) -> list[dict]:
+def process_frames(frame_paths: list[str]) -> list[dict]:
     """
-    Full pipeline: OCR all frames → parse → deduplicate → attach alliance tag.
+    Full pipeline: OCR all frames -> parse -> deduplicate.
 
     Args:
         frame_paths: List of paths to frame images.
-        alliance: Alliance tag to attach (e.g., "BOO", "ZEN").
 
     Returns:
-        Deduplicated roster: [{"ign": "...", "rank": "R4", "alliance": "BOO"}, ...]
+        Deduplicated roster: [{"ign": "...", "rank": "R4"}, ...]
     """
     all_entries = []
 
@@ -130,9 +129,5 @@ def process_frames(frame_paths: list[str], alliance: str) -> list[dict]:
 
     # Deduplicate across all frames
     unique = deduplicate(all_entries)
-
-    # Attach alliance tag
-    for entry in unique:
-        entry["alliance"] = alliance
 
     return unique

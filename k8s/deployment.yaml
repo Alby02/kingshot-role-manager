@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kingshot-bot
+  namespace: kingshot-role-manager
+  labels:
+    app: kingshot-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kingshot-bot
+  template:
+    metadata:
+      labels:
+        app: kingshot-bot
+    spec:
+      containers:
+        - name: bot
+          image: ghcr.io/your-org/kingshot-bot:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: kingshot-bot-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30

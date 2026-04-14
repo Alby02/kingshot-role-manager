@@ -1,4 +1,30 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kingshot-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=kingshot_role_manager
+      - POSTGRES_USER=kingshot
+      - POSTGRES_PASSWORD=kingshot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: kingshot-pgadmin
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_CONFIG_SERVER_MODE=True
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
   bot:
     build:
       context: .
@@ -6,9 +32,13 @@ services:
     image: kingshot-bot:latest
     container_name: kingshot-bot
     restart: unless-stopped
-    volumes:
-      - ./data:/app/data
+    depends_on:
+      - postgres
     env_file:
       - .env
     environment:
-      - DB_PATH=data/kingshot.db
+      - DATABASE_URL=postgresql://kingshot:kingshot@postgres:5432/kingshot_role_manager
+
+volumes:
+  postgres_data:
+  pgadmin_data:

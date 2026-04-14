@@ -1,0 +1,10 @@
+# Keep build context small and cache-friendly
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+.git
+.gitignore

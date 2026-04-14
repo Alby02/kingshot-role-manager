@@ -1,54 +1,56 @@
-import sqlite3
 import os
 import logging
+import psycopg
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.environ.get("DB_PATH", "data/kingshot.db")
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/kingshot_role_manager",
+)
 
-def get_connection() -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+
+def get_connection() -> psycopg.Connection:
+    return psycopg.connect(DATABASE_URL)
+
+
+SCHEMA_SQL = '''
+CREATE TABLE IF NOT EXISTS players (
+    game_id TEXT PRIMARY KEY,
+    discord_id BIGINT NOT NULL,
+    ign TEXT NOT NULL,
+    kingdom INTEGER DEFAULT 0,
+    level INTEGER DEFAULT 0,
+    is_diplomat BOOLEAN NOT NULL DEFAULT FALSE,
+    has_been_in_alliance BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS roster (
+    ign TEXT PRIMARY KEY,
+    alliance TEXT NOT NULL,
+    rank TEXT NOT NULL,
+    last_updated TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ping_channels (
+    category TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ping_roles (
+    role_name TEXT PRIMARY KEY,
+    category TEXT NOT NULL
+);
+'''
 
 def init_db() -> None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-
-        # Schema defining strict relationships without NULLs
-        cursor.executescript('''
-            CREATE TABLE IF NOT EXISTS players (
-                game_id TEXT PRIMARY KEY,
-                discord_id INTEGER NOT NULL,
-                ign TEXT NOT NULL,
-                kingdom INTEGER DEFAULT 0,
-                level INTEGER DEFAULT 0,
-                is_diplomat BOOLEAN NOT NULL DEFAULT 0,
-                has_been_in_alliance BOOLEAN NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS roster (
-                ign TEXT PRIMARY KEY,
-                alliance TEXT NOT NULL,
-                rank TEXT NOT NULL,
-                last_updated TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS ping_channels (
-                category TEXT PRIMARY KEY,
-                channel_id TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS ping_roles (
-                role_name TEXT PRIMARY KEY,
-                category TEXT NOT NULL
-            );
-        ''')
+        cursor.execute(SCHEMA_SQL)
 
         conn.commit()
-        logger.info(f"Database initialized successfully at {DB_PATH}")
+        logger.info("Database initialized successfully.")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -66,11 +68,11 @@ def register_user(discord_id: int, game_id: str, ign: str, kingdom: int = 0, lev
         cursor = conn.cursor()
         
         # Check if ign is in roster
-        cursor.execute("SELECT 1 FROM roster WHERE ign = ?", (ign,))
+        cursor.execute("SELECT 1 FROM roster WHERE ign = %s", (ign,))
         in_roster = cursor.fetchone() is not None
 
         # We need to preserve has_been_in_alliance/is_diplomat if it exists
-        cursor.execute('SELECT is_diplomat, has_been_in_alliance FROM players WHERE game_id = ?', (game_id,))
+        cursor.execute('SELECT is_diplomat, has_been_in_alliance FROM players WHERE game_id = %s', (game_id,))
         row = cursor.fetchone()
         
         has_been = 1 if in_roster else 0
@@ -79,13 +81,15 @@ def register_user(discord_id: int, game_id: str, ign: str, kingdom: int = 0, lev
             if row[1]: # preserve if already true
                 has_been = 1
             cursor.execute('''
-                UPDATE players SET discord_id = ?, ign = ?, kingdom = ?, level = ?, has_been_in_alliance = ? WHERE game_id = ?
-            ''', (discord_id, ign, kingdom, level, has_been, game_id))
+                UPDATE players
+                SET discord_id = %s, ign = %s, kingdom = %s, level = %s, has_been_in_alliance = %s
+                WHERE game_id = %s
+            ''', (discord_id, ign, kingdom, level, bool(has_been), game_id))
         else:
             cursor.execute('''
                 INSERT INTO players (game_id, discord_id, ign, kingdom, level, has_been_in_alliance) 
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (game_id, discord_id, ign, kingdom, level, has_been))
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (game_id, discord_id, ign, kingdom, level, bool(has_been)))
 
         conn.commit()
     except Exception as e:
@@ -100,12 +104,12 @@ def update_player_data(discord_id: int, game_id: str, ign: str, kingdom: int, le
         conn = get_connection()
         cursor = conn.cursor()
 
-        cursor.execute('SELECT discord_id FROM players WHERE game_id = ?', (game_id,))
+        cursor.execute('SELECT discord_id FROM players WHERE game_id = %s', (game_id,))
         row = cursor.fetchone()
         if not row or row[0] != discord_id:
             return False
 
-        cursor.execute('UPDATE players SET ign = ?, kingdom = ?, level = ? WHERE game_id = ?', (ign, kingdom, level, game_id))
+        cursor.execute('UPDATE players SET ign = %s, kingdom = %s, level = %s WHERE game_id = %s', (ign, kingdom, level, game_id))
         conn.commit()
         return True
     except Exception as e:
@@ -128,7 +132,7 @@ def get_user_igns(discord_id: int) -> list[tuple]:
             SELECT p.game_id, p.ign, r.alliance, r.rank, p.is_diplomat, p.kingdom, p.level 
             FROM players p
             LEFT JOIN roster r ON p.ign = r.ign
-            WHERE p.discord_id = ?
+            WHERE p.discord_id = %s
         ''', (discord_id,))
         return cursor.fetchall()
     except Exception as e:
@@ -149,7 +153,7 @@ def get_discord_user_roles(discord_id: int) -> dict[str, set[str] | bool]:
             SELECT r.alliance, r.rank, p.is_diplomat, p.has_been_in_alliance 
             FROM players p
             LEFT JOIN roster r ON p.ign = r.ign
-            WHERE p.discord_id = ?
+            WHERE p.discord_id = %s
         ''', (discord_id,))
         rows = cursor.fetchall()
 
@@ -200,7 +204,7 @@ def get_account_by_game_id(game_id: str) -> tuple | None:
             SELECT p.game_id, p.ign, p.discord_id, r.alliance, r.rank, p.is_diplomat 
             FROM players p
             LEFT JOIN roster r ON p.ign = r.ign
-            WHERE p.game_id = ?
+            WHERE p.game_id = %s
         ''', (game_id,))
         return cursor.fetchone()
     except Exception as e:
@@ -214,7 +218,7 @@ def set_diplomat(game_id: str, is_diplomat: bool) -> bool:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE players SET is_diplomat = ? WHERE game_id = ?', (1 if is_diplomat else 0, game_id))
+        cursor.execute('UPDATE players SET is_diplomat = %s WHERE game_id = %s', (is_diplomat, game_id))
         conn.commit()
         return cursor.rowcount > 0
     except Exception as e:
@@ -228,7 +232,7 @@ def set_diplomat(game_id: str, is_diplomat: bool) -> bool:
 # Roster Management
 # ---------------------------------------------------------------------------
 
-def bulk_update_roster(entries: list[dict[str, str]], alliance: str, timestamp: str) -> bool:
+def bulk_update_roster(entries: list[dict[str, str]], alliance: str, timestamp) -> bool:
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -238,13 +242,18 @@ def bulk_update_roster(entries: list[dict[str, str]], alliance: str, timestamp: 
             rank = entry.get("rank")
 
             cursor.execute('''
-                INSERT OR REPLACE INTO roster (ign, alliance, rank, last_updated)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO roster (ign, alliance, rank, last_updated)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (ign)
+                DO UPDATE SET
+                    alliance = EXCLUDED.alliance,
+                    rank = EXCLUDED.rank,
+                    last_updated = EXCLUDED.last_updated
             ''', (ign, alliance, rank, timestamp))
             
             # Since they are matched with an active alliance, set has_been_in_alliance = 1
             cursor.execute('''
-                UPDATE players SET has_been_in_alliance = 1 WHERE ign = ?
+                UPDATE players SET has_been_in_alliance = TRUE WHERE ign = %s
             ''', (ign,))
 
         conn.commit()
@@ -256,14 +265,14 @@ def bulk_update_roster(entries: list[dict[str, str]], alliance: str, timestamp: 
         if 'conn' in locals() and conn:
             conn.close()
 
-def mark_absent(alliance: str, timestamp: str) -> int:
+def mark_absent(alliance: str, timestamp) -> int:
     try:
         conn = get_connection()
         cursor = conn.cursor()
         # Delete old entries entirely, our players table tracks historical presence now
         cursor.execute('''
             DELETE FROM roster
-            WHERE alliance = ? AND last_updated < ?
+            WHERE alliance = %s AND last_updated < %s
         ''', (alliance, timestamp))
         deleted_count = cursor.rowcount
         conn.commit()
@@ -283,7 +292,7 @@ def get_ping_channel(category: str) -> str | None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT channel_id FROM ping_channels WHERE category = ?', (category,))
+        cursor.execute('SELECT channel_id FROM ping_channels WHERE category = %s', (category,))
         row = cursor.fetchone()
         return row[0] if row else None
     except Exception as e:
@@ -298,7 +307,10 @@ def set_ping_channel(category: str, channel_id: str) -> None:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT OR REPLACE INTO ping_channels (category, channel_id) VALUES (?, ?)
+            INSERT INTO ping_channels (category, channel_id)
+            VALUES (%s, %s)
+            ON CONFLICT (category)
+            DO UPDATE SET channel_id = EXCLUDED.channel_id
         ''', (category, channel_id))
         conn.commit()
     except Exception as e:
@@ -331,7 +343,11 @@ def add_ping_role(role_name: str, category: str) -> None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute('INSERT OR IGNORE INTO ping_roles (role_name, category) VALUES (?, ?)', (role_name, category))
+        cursor.execute('''
+            INSERT INTO ping_roles (role_name, category)
+            VALUES (%s, %s)
+            ON CONFLICT (role_name) DO NOTHING
+        ''', (role_name, category))
         conn.commit()
     except Exception as e:
         logger.error(f"Error adding ping role: {e}")

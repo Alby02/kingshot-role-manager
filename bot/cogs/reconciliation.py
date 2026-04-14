@@ -11,9 +11,21 @@ class Reconciliation(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="upload_roster", description="Upload a roster JSON file for reconciliation (Admin/R4/R5).")
-    @app_commands.describe(file="The .json roster file to upload")
+    @app_commands.describe(
+        file="The .json roster file to upload",
+        alliance="Alliance this roster belongs to",
+    )
+    @app_commands.choices(alliance=[
+        app_commands.Choice(name="BOO", value="BOO"),
+        app_commands.Choice(name="ZEN", value="ZEN"),
+    ])
     @app_commands.default_permissions(administrator=True)
-    async def upload_roster(self, interaction: discord.Interaction, file: discord.Attachment) -> None:
+    async def upload_roster(
+        self,
+        interaction: discord.Interaction,
+        file: discord.Attachment,
+        alliance: str,
+    ) -> None:
         # We don't have an easy way to check R4/R5 dynamically via default_permissions alone, 
         # but we can enforce it in the command. Here we do an explicit check.
         has_permission = (
@@ -36,12 +48,11 @@ class Reconciliation(commands.Cog):
             await interaction.followup.send("❌ Failed to read or decode the JSON file. Invalid format.")
             return
 
-        valid, result = validate_roster_json(data)
-        if not valid:
-            await interaction.followup.send(f"❌ Validation error: {result}")
+        try:
+            validate_roster_json(data)
+        except ValueError as e:
+            await interaction.followup.send(f"❌ Validation error: {e}")
             return
-
-        alliance = result
         
         try:
             summary = await process_roster(interaction.guild, data, alliance)
