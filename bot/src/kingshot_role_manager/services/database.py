@@ -1,17 +1,64 @@
 import os
 import logging
+from datetime import datetime
+from typing import Mapping, Sequence, TypedDict, TypeAlias
+
 import psycopg
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/kingshot_role_manager",
-)
+
+class DbConfig(TypedDict):
+    host: str
+    port: int
+    dbname: str
+    user: str
+    password: str
+
+
+class UserRoleData(TypedDict):
+    alliances: set[str]
+    ranks: set[str]
+    is_diplomat: bool
+    has_accounts: bool
+    had_alliance: bool
+
+
+UserIgnRow: TypeAlias = tuple[str, str, str | None, str | None, bool, int, int]
+AccountByGameIdRow: TypeAlias = tuple[str, str, int, str | None, str | None, bool]
+
+def _required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _db_config() -> DbConfig:
+    port_raw = os.environ.get("DATABASE_PORT", "5432")
+    try:
+        port = int(port_raw)
+    except ValueError as exc:
+        raise RuntimeError("DATABASE_PORT must be a valid integer") from exc
+
+    return {
+        "host": _required_env("DATABASE_HOST"),
+        "port": port,
+        "dbname": _required_env("DATABASE_NAME"),
+        "user": _required_env("DATABASE_USER"),
+        "password": _required_env("DATABASE_PASSWORD"),
+    }
 
 
 def get_connection() -> psycopg.Connection:
-    return psycopg.connect(DATABASE_URL)
+    config = _db_config()
+    return psycopg.connect(
+        host=config["host"],
+        port=config["port"],
+        dbname=config["dbname"],
+        user=config["user"],
+        password=config["password"],
+    )
 
 
 SCHEMA_SQL = '''
@@ -104,10 +151,27 @@ def update_player_data(discord_id: int, game_id: str, ign: str, kingdom: int, le
         conn = get_connection()
         cursor = conn.cursor()
 
-        cursor.execute('SELECT discord_id FROM players WHERE game_id = %s', (game_id,))
+        cursor.execute('SELECT discord_id, ign FROM players WHERE game_id = %s', (game_id,))
         row = cursor.fetchone()
         if not row or row[0] != discord_id:
             return False
+
+        old_ign = row[1]
+
+        if old_ign != ign:
+            cursor.execute('SELECT alliance, rank, last_updated FROM roster WHERE ign = %s', (old_ign,))
+            old_roster = cursor.fetchone()
+            cursor.execute('SELECT 1 FROM roster WHERE ign = %s', (ign,))
+            new_exists = cursor.fetchone() is not None
+
+            # Preserve active roster linkage on IGN rename until next upload refreshes canonical data.
+            if old_roster and not new_exists:
+                alliance, rank, last_updated = old_roster
+                cursor.execute('''
+                    UPDATE roster
+                    SET ign = %s, alliance = %s, rank = %s, last_updated = %s
+                    WHERE ign = %s
+                ''', (ign, alliance, rank, last_updated, old_ign))
 
         cursor.execute('UPDATE players SET ign = %s, kingdom = %s, level = %s WHERE game_id = %s', (ign, kingdom, level, game_id))
         conn.commit()
@@ -123,7 +187,7 @@ def update_player_data(discord_id: int, game_id: str, ign: str, kingdom: int, le
 # Query helpers
 # ---------------------------------------------------------------------------
 
-def get_user_igns(discord_id: int) -> list[tuple]:
+def get_user_igns(discord_id: int) -> list[UserIgnRow]:
     """Return all game accounts linked to a Discord user with their current roster status."""
     try:
         conn = get_connection()
@@ -142,7 +206,7 @@ def get_user_igns(discord_id: int) -> list[tuple]:
         if 'conn' in locals() and conn:
             conn.close()
 
-def get_discord_user_roles(discord_id: int) -> dict[str, set[str] | bool]:
+def get_discord_user_roles(discord_id: int) -> UserRoleData:
     """
     Aggregate role-relevant info for a Discord user across all their game accounts.
     """
@@ -157,7 +221,7 @@ def get_discord_user_roles(discord_id: int) -> dict[str, set[str] | bool]:
         ''', (discord_id,))
         rows = cursor.fetchall()
 
-        result = {
+        result: UserRoleData = {
             "alliances": set(),
             "ranks": set(),
             "is_diplomat": False,
@@ -177,7 +241,13 @@ def get_discord_user_roles(discord_id: int) -> dict[str, set[str] | bool]:
         return result
     except Exception as e:
         logger.error(f"Error fetching user role data: {e}")
-        return {"alliances": set(), "ranks": set(), "is_diplomat": False, "has_accounts": False, "had_alliance": False}
+        return {
+            "alliances": set(),
+            "ranks": set(),
+            "is_diplomat": False,
+            "has_accounts": False,
+            "had_alliance": False,
+        }
     finally:
         if 'conn' in locals() and conn:
             conn.close()
@@ -196,7 +266,7 @@ def get_all_linked_discord_ids() -> list[int]:
         if 'conn' in locals() and conn:
             conn.close()
 
-def get_account_by_game_id(game_id: str) -> tuple | None:
+def get_account_by_game_id(game_id: str) -> AccountByGameIdRow | None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -232,7 +302,7 @@ def set_diplomat(game_id: str, is_diplomat: bool) -> bool:
 # Roster Management
 # ---------------------------------------------------------------------------
 
-def bulk_update_roster(entries: list[dict[str, str]], alliance: str, timestamp) -> bool:
+def bulk_update_roster(entries: Sequence[Mapping[str, str]], alliance: str, timestamp: datetime) -> bool:
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -265,7 +335,7 @@ def bulk_update_roster(entries: list[dict[str, str]], alliance: str, timestamp) 
         if 'conn' in locals() and conn:
             conn.close()
 
-def mark_absent(alliance: str, timestamp) -> int:
+def mark_absent(alliance: str, timestamp: datetime) -> int:
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -280,6 +350,41 @@ def mark_absent(alliance: str, timestamp) -> int:
     except Exception as e:
         logger.error(f"Error marking absent accounts: {e}")
         raise
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+
+def get_roster_for_alliance(alliance: str) -> dict[str, str]:
+    """Return current roster snapshot for an alliance as ign -> rank."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT ign, rank FROM roster WHERE alliance = %s', (alliance,))
+        return {ign: rank for ign, rank in cursor.fetchall()}
+    except Exception as e:
+        logger.error(f"Error fetching alliance roster: {e}")
+        return {}
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+
+def get_linked_discord_ids_for_alliance(alliance: str) -> list[int]:
+    """Return linked Discord IDs with at least one currently rostered account in the alliance."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT p.discord_id
+            FROM players p
+            JOIN roster r ON p.ign = r.ign
+            WHERE r.alliance = %s
+        ''', (alliance,))
+        return [row[0] for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Error fetching alliance-linked discord IDs: {e}")
+        return []
     finally:
         if 'conn' in locals() and conn:
             conn.close()
@@ -326,7 +431,7 @@ def get_all_ping_roles() -> dict[str, list[str]]:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT category, role_name FROM ping_roles')
-        roles = {}
+        roles: dict[str, list[str]] = {}
         for category, role_name in cursor.fetchall():
             if category not in roles:
                 roles[category] = []

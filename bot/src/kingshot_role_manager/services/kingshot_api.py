@@ -1,9 +1,17 @@
 import aiohttp
 import logging
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
-async def fetch_ign(player_id: str) -> dict | None:
+
+class KingshotPlayerData(TypedDict):
+    name: str
+    kingdom: int
+    level: int
+    profilePhoto: str | None
+
+async def fetch_ign(player_id: str) -> KingshotPlayerData | None:
     """Fetch the IGN and profile photo for a given Kingshot Player ID."""
     url = f"https://kingshot.net/api/player-info?playerId={player_id}"
     async with aiohttp.ClientSession() as session:

@@ -20,8 +20,9 @@ WORKDIR /app
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH="/app/src"
 
 COPY --from=builder /opt/venv /opt/venv
 COPY . .
 
-CMD ["python", "main.py"]
+CMD ["python", "-m", "kingshot_role_manager"]

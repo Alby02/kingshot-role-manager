@@ -17,7 +17,7 @@ This project links Discord users to Kingshot accounts, reconciles alliance roste
 - `/sync <player_id>` to refresh account data from API
 - `/upload_roster <file> <alliance>` to reconcile alliance state
 - Automatic role sync (`Guest`, `Member`, `Ex-Member`, `Diplomat`, alliance roles, rank roles)
-- Admin/officer commands (`/whois`, `/setplayer`, `/setdiplomat`, `/removediplomat`)
+- Admin/manager commands (`/whois`, `/setplayer`, `/setdiplomat`, `/removediplomat`)
 - Event ping role management (`/pings`, `/create_ping`, `/set_ping_channel`)
 
 ## Tech Stack
@@ -43,7 +43,7 @@ uv sync
 Create a database (example name: `kingshot_role_manager`) in your PostgreSQL instance, then run:
 
 ```bash
-psql "$DATABASE_URL" -f db/schema.sql
+PGPASSWORD="$DATABASE_PASSWORD" psql -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER" -d "$DATABASE_NAME" -f db/schema.sql
 ```
 
 ### 3. Configure environment
@@ -51,14 +51,26 @@ psql "$DATABASE_URL" -f db/schema.sql
 Set these environment variables:
 
 - `DISCORD_TOKEN`
-- `DATABASE_URL` (example: `postgresql://user:password@host:5432/kingshot_role_manager`)
+- `DATABASE_HOST`
+- `DATABASE_PORT` (optional, defaults to `5432`)
+- `DATABASE_NAME`
+- `DATABASE_USER`
+- `DATABASE_PASSWORD`
 
 ### 4. Run bot locally
 
 ```bash
 cd bot
-uv run python main.py
+uv run python -m kingshot_role_manager
 ```
+
+### 5. Permission roles
+
+The bot auto-creates missing managed roles when possible.
+
+- `roster-manager`: can run `/upload_roster`
+- `player-manager` or `roster-manager`: can run `/setplayer`
+- `R4`/`R5` (or admin): can run `/setdiplomat` and `/removediplomat`
 
 ## Kubernetes Deployment (k3s)
 

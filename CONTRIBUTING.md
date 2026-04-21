@@ -27,18 +27,22 @@ uv sync
 Set env vars:
 
 - `DISCORD_TOKEN`
-- `DATABASE_URL`
+- `DATABASE_HOST`
+- `DATABASE_PORT` (optional, defaults to `5432`)
+- `DATABASE_NAME`
+- `DATABASE_USER`
+- `DATABASE_PASSWORD`
 
 Initialize DB:
 
 ```bash
-psql "$DATABASE_URL" -f db/schema.sql
+PGPASSWORD="$DATABASE_PASSWORD" psql -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER" -d "$DATABASE_NAME" -f db/schema.sql
 ```
 
 Run:
 
 ```bash
-uv run python main.py
+uv run python -m kingshot_role_manager
 ```
 
 ### Roster Script
@@ -66,7 +70,7 @@ Install system tools:
 When modifying schema:
 
 1. Update `bot/db/schema.sql`.
-2. Update `bot/services/database.py` init schema if needed.
+2. Update `bot/src/kingshot_role_manager/services/database.py` init schema if needed.
 3. Document migration/backfill steps in PR description.
 
 ## Pull Request Checklist

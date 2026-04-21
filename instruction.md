@@ -22,20 +22,26 @@ This repository has two components:
 - Requires local FFmpeg + Tesseract
 
 ## Source Layout
-- `bot/main.py`: bot entrypoint and cog loading
-- `bot/cogs/verification.py`: `/verify`, `/sync`
-- `bot/cogs/admin.py`: `/whois`, `/setplayer`, `/setdiplomat`, `/removediplomat`
-- `bot/cogs/reconciliation.py`: `/upload_roster`
-- `bot/cogs/events.py`: ping role commands
-- `bot/services/database.py`: PostgreSQL schema initialization and DB helpers
-- `bot/services/role_sync.py`: data-driven role assignment
-- `bot/services/roster.py`: JSON validation, reconciliation orchestration
+- `bot/src/kingshot_role_manager/__main__.py`: bot entrypoint and cog loading
+- `bot/src/kingshot_role_manager/cogs/verification.py`: `/verify`, `/sync`, `/setplayer`
+- `bot/src/kingshot_role_manager/cogs/admin.py`: `/whois`
+- `bot/src/kingshot_role_manager/cogs/diplomacy.py`: `/setdiplomat`, `/removediplomat`
+- `bot/src/kingshot_role_manager/cogs/reconciliation.py`: `/upload_roster`
+- `bot/src/kingshot_role_manager/cogs/events.py`: ping role commands
+- `bot/src/kingshot_role_manager/ui/`: reusable Discord view components
+- `bot/src/kingshot_role_manager/services/database.py`: PostgreSQL schema initialization and DB helpers
+- `bot/src/kingshot_role_manager/services/role_sync.py`: data-driven role assignment
+- `bot/src/kingshot_role_manager/services/roster.py`: JSON validation, reconciliation orchestration
 - `bot/db/schema.sql`: SQL bootstrap for PostgreSQL
 - `k8s/`: Kubernetes manifests for deployment
 
 ## Environment Variables (Bot)
 - `DISCORD_TOKEN`: Discord bot token
-- `DATABASE_URL`: Postgres connection string (example: `postgresql://user:password@host:5432/kingshot_role_manager`)
+- `DATABASE_HOST`: Postgres hostname
+- `DATABASE_PORT`: Postgres port (defaults to `5432`)
+- `DATABASE_NAME`: Postgres database name
+- `DATABASE_USER`: Postgres username
+- `DATABASE_PASSWORD`: Postgres password
 
 ## Data Model (PostgreSQL)
 
@@ -64,8 +70,14 @@ This repository has two components:
 
 ## Command Behavior Notes
 
+### Permission Role Gates
+- `/upload_roster`: requires `roster-manager` or Administrator
+- `/setplayer`: requires `roster-manager`, `player-manager`, or Administrator
+- `/setdiplomat` and `/removediplomat`: requires `R4`, `R5`, or Administrator
+- Missing managed roles are auto-created by the bot when permissions allow.
+
 ### `/upload_roster`
-- Requires officer permission (Admin, R4, or R5).
+- Requires roster permission (`roster-manager` or Admin).
 - Requires two inputs: JSON file + alliance selection (`BOO` or `ZEN`).
 - JSON entries must contain `ign`; `rank` is optional but validated when present.
 - `alliance` inside each JSON row is optional. If present, it must match the slash command alliance.
@@ -83,5 +95,5 @@ This repository has two components:
 
 ## Deployment Summary
 - Kubernetes (k3s) is the main deployment path.
-- Use manifests in `k8s/` and provide `DISCORD_TOKEN` + `DATABASE_URL` through secret data.
+- Use manifests in `k8s/` and provide `DISCORD_TOKEN` + database env vars through secret data.
 - Local container runs can still use `bot/compose.yaml` for testing with a local Postgres container.

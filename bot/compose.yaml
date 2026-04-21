@@ -29,15 +29,19 @@ services:
     build:
       context: .
       dockerfile: Containerfile
-    image: kingshot-bot:latest
-    container_name: kingshot-bot
+    image: kingshot-role-manager:latest
+    container_name: kingshot-role-manager
     restart: unless-stopped
     depends_on:
       - postgres
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://kingshot:kingshot@postgres:5432/kingshot_role_manager
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=kingshot_role_manager
+      - DATABASE_USER=kingshot
+      - DATABASE_PASSWORD=kingshot
 
 volumes:
   postgres_data:
