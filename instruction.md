@@ -33,7 +33,6 @@ This repository has two components:
 - `bot/src/kingshot_role_manager/services/role_sync.py`: data-driven role assignment
 - `bot/src/kingshot_role_manager/services/roster.py`: JSON validation, reconciliation orchestration
 - `bot/db/schema.sql`: SQL bootstrap for PostgreSQL
-- `k8s/`: Kubernetes manifests for deployment
 
 ## Environment Variables (Bot)
 - `DISCORD_TOKEN`: Discord bot token
@@ -71,29 +70,21 @@ This repository has two components:
 ## Command Behavior Notes
 
 ### Permission Role Gates
-- `/upload_roster`: requires `roster-manager` or Administrator
-- `/setplayer`: requires `roster-manager`, `player-manager`, or Administrator
+- `/upload_roster` and `/setplayer`: requires `roster-manager` or Administrator
 - `/setdiplomat` and `/removediplomat`: requires `R4`, `R5`, or Administrator
 - Missing managed roles are auto-created by the bot when permissions allow.
 
 ### `/upload_roster`
 - Requires roster permission (`roster-manager` or Admin).
 - Requires two inputs: JSON file + alliance selection (`BOO` or `ZEN`).
-- JSON entries must contain `ign`; `rank` is optional but validated when present.
-- `alliance` inside each JSON row is optional. If present, it must match the slash command alliance.
+- JSON entries must contain `ign`; `rank`
 - Reconciliation flow:
   1. Validate payload
   2. Upsert roster rows for selected alliance
   3. Remove absent rows by timestamp diff
-  4. Run role sync for linked Discord users
 
 ## Role Sync Summary
 - Active roster player -> `Member` + alliance role + rank role
 - Linked player never seen in roster -> `Guest`
 - Previously seen in roster, now absent -> `Ex-Member`
 - Diplomat flag adds `Diplomat`
-
-## Deployment Summary
-- Kubernetes (k3s) is the main deployment path.
-- Use manifests in `k8s/` and provide `DISCORD_TOKEN` + database env vars through secret data.
-- Local container runs can still use `bot/compose.yaml` for testing with a local Postgres container.

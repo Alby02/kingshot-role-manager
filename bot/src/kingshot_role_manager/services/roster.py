@@ -43,20 +43,41 @@ def validate_roster_json(data: object) -> None:
     if not isinstance(data, list):
         raise ValueError("JSON must be an array of objects.")
 
-    if len(data) == 0:
+    entries = cast(list[object], data)
+
+    if len(entries) == 0:
         raise ValueError("JSON array is empty.")
 
-    for i, entry in enumerate(data):
+    for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise ValueError(f"Entry {i} is not an object.")
-        if "ign" not in entry:
-            raise ValueError(f"Entry {i} is missing 'ign' field.")
-        if not isinstance(entry["ign"], str) or not entry["ign"].strip():
+
+        entry_obj = cast(dict[str, object], entry)
+        ign_value = entry_obj.get("ign")
+        if not isinstance(ign_value, str) or not ign_value.strip():
             raise ValueError(f"Entry {i} has invalid 'ign' (must be non-empty string).")
 
-        rank = entry.get("rank")
-        if rank and rank not in VALID_RANKS:
-            raise ValueError(f"Entry {i} has invalid rank '{rank}'. Must be one of {VALID_RANKS}.")
+        if "rank" not in entry_obj:
+            raise ValueError(f"Entry {i} is missing 'rank' field.")
+
+        rank_value = entry_obj["rank"]
+        if not isinstance(rank_value, str):
+            raise ValueError(f"Entry {i} has invalid 'rank' (must be a string).")
+        if rank_value not in VALID_RANKS:
+            raise ValueError(f"Entry {i} has invalid rank '{rank_value}'. Must be one of {VALID_RANKS}.")
+
+
+def _normalize_roster_json(data: object) -> RosterJson:
+    validate_roster_json(data)
+    normalized: RosterJson = []
+
+    for raw_entry in cast(list[object], data):
+        entry_obj = cast(dict[str, object], raw_entry)
+        ign_value = cast(str, entry_obj["ign"]).strip()
+        rank_value = cast(str, entry_obj["rank"])
+        normalized.append({"ign": ign_value, "rank": rank_value})
+
+    return normalized
 
 import discord
 
@@ -64,14 +85,18 @@ async def fetch_roster_attachment(attachment: discord.Attachment) -> RosterJson 
     try:
         raw = await attachment.read()
         decoded = json.loads(raw.decode("utf-8"))
-        return cast(RosterJson, decoded)
+        return _normalize_roster_json(decoded)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         logger.error(f"Failed to decode attachment: {e}")
         return None
 
 async def process_roster(guild: discord.Guild, data: RosterJson, alliance: str) -> RosterSummary:
     timestamp = datetime.now(timezone.utc)
-    bulk_update_roster(cast(list[dict[str, str]], data), alliance, timestamp)
+    normalized_entries: list[dict[str, str]] = [
+        {"ign": entry["ign"], "rank": entry["rank"]}
+        for entry in data
+    ]
+    bulk_update_roster(normalized_entries, alliance, timestamp)
     removed_count = mark_absent(alliance, timestamp)
     sync_summary = await sync_all_users(guild)
     return {
@@ -87,7 +112,7 @@ def compute_roster_diff(alliance: str, incoming: RosterJson) -> RosterDiff:
 
     incoming_map: dict[str, str] = {}
     for entry in incoming:
-        incoming_map[entry["ign"]] = entry.get("rank", "")
+        incoming_map[entry["ign"]] = entry["rank"]
 
     current_igns = set(current.keys())
     incoming_igns = set(incoming_map.keys())

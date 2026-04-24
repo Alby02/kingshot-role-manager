@@ -8,8 +8,7 @@ This project links Discord users to Kingshot accounts, reconciles alliance roste
 
 - `bot/`: Discord bot service
 - `roster-script/`: local OCR extraction CLI
-- `k8s/`: Kubernetes (k3s-friendly) deployment manifests
-- `instruction.md`: concise project micro-docs
+- `instruction.md`: concise probably wrong project micro-docs
 
 ## Features
 
@@ -20,90 +19,12 @@ This project links Discord users to Kingshot accounts, reconciles alliance roste
 - Admin/manager commands (`/whois`, `/setplayer`, `/setdiplomat`, `/removediplomat`)
 - Event ping role management (`/pings`, `/create_ping`, `/set_ping_channel`)
 
-## Tech Stack
-
-- Python 3.12+
-- `discord.py`
-- PostgreSQL (`psycopg`)
-- `aiohttp`
-- Optional local OCR utility with FFmpeg + Tesseract
-
-
-## Quick Start (Bot)
-
-### 1. Install dependencies
-
-```bash
-cd bot
-uv sync
-```
-
-### 2. Create PostgreSQL database
-
-Create a database (example name: `kingshot_role_manager`) in your PostgreSQL instance, then run:
-
-```bash
-PGPASSWORD="$DATABASE_PASSWORD" psql -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER" -d "$DATABASE_NAME" -f db/schema.sql
-```
-
-### 3. Configure environment
-
-Set these environment variables:
-
-- `DISCORD_TOKEN`
-- `DATABASE_HOST`
-- `DATABASE_PORT` (optional, defaults to `5432`)
-- `DATABASE_NAME`
-- `DATABASE_USER`
-- `DATABASE_PASSWORD`
-
-### 4. Run bot locally
-
-```bash
-cd bot
-uv run python -m kingshot_role_manager
-```
-
-### 5. Permission roles
+### Permission roles
 
 The bot auto-creates missing managed roles when possible.
 
-- `roster-manager`: can run `/upload_roster`
-- `player-manager` or `roster-manager`: can run `/setplayer`
+- `roster-manager` (or admin): can run `/upload_roster` or `/setplayer`
 - `R4`/`R5` (or admin): can run `/setdiplomat` and `/removediplomat`
-
-## Kubernetes Deployment (k3s)
-
-### 1. Build and push bot image
-
-Use your preferred registry and update image in `k8s/deployment.yaml`.
-
-### 2. Create secret manifest
-
-Copy `k8s/secret.example.yaml` to a private file, fill values, then apply it.
-
-### 3. Deploy manifests
-
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f your-secret.yaml
-kubectl apply -f k8s/deployment.yaml
-```
-
-Or with kustomize:
-
-```bash
-kubectl apply -k k8s/
-```
-
-## Local Container Run (Optional)
-
-For local integration testing with a bundled PostgreSQL container:
-
-```bash
-cd bot
-podman compose up -d --build
-```
 
 ## Roster Script
 

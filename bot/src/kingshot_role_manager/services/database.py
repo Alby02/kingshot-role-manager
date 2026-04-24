@@ -61,6 +61,12 @@ def get_connection() -> psycopg.Connection:
     )
 
 
+def _close_conn_from_locals(local_vars: Mapping[str, object]) -> None:
+    conn_obj = local_vars.get("conn")
+    if isinstance(conn_obj, psycopg.Connection):
+        conn_obj.close()
+
+
 SCHEMA_SQL = '''
 CREATE TABLE IF NOT EXISTS players (
     game_id TEXT PRIMARY KEY,
@@ -102,8 +108,7 @@ def init_db() -> None:
         logger.error(f"Failed to initialize database: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 # ---------------------------------------------------------------------------
 # Player Registration
@@ -143,8 +148,7 @@ def register_user(discord_id: int, game_id: str, ign: str, kingdom: int = 0, lev
         logger.error(f"Error registering user in DB: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def update_player_data(discord_id: int, game_id: str, ign: str, kingdom: int, level: int) -> bool:
     try:
@@ -180,8 +184,7 @@ def update_player_data(discord_id: int, game_id: str, ign: str, kingdom: int, le
         logger.error(f"Error updating IGN in DB: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 # ---------------------------------------------------------------------------
 # Query helpers
@@ -203,8 +206,7 @@ def get_user_igns(discord_id: int) -> list[UserIgnRow]:
         logger.error(f"Error fetching IGNs: {e}")
         return []
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def get_discord_user_roles(discord_id: int) -> UserRoleData:
     """
@@ -249,8 +251,7 @@ def get_discord_user_roles(discord_id: int) -> UserRoleData:
             "had_alliance": False,
         }
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def get_all_linked_discord_ids() -> list[int]:
     """Return all Discord IDs that have at least one linked game account."""
@@ -263,8 +264,7 @@ def get_all_linked_discord_ids() -> list[int]:
         logger.error(f"Error fetching linked discord IDs: {e}")
         return []
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def get_account_by_game_id(game_id: str) -> AccountByGameIdRow | None:
     try:
@@ -281,8 +281,7 @@ def get_account_by_game_id(game_id: str) -> AccountByGameIdRow | None:
         logger.error(f"Error fetching account: {e}")
         return None
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def set_diplomat(game_id: str, is_diplomat: bool) -> bool:
     try:
@@ -295,8 +294,7 @@ def set_diplomat(game_id: str, is_diplomat: bool) -> bool:
         logger.error(f"Error setting diplomat status: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 # ---------------------------------------------------------------------------
 # Roster Management
@@ -332,8 +330,7 @@ def bulk_update_roster(entries: Sequence[Mapping[str, str]], alliance: str, time
         logger.error(f"Error in bulk roster update: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def mark_absent(alliance: str, timestamp: datetime) -> int:
     try:
@@ -351,8 +348,7 @@ def mark_absent(alliance: str, timestamp: datetime) -> int:
         logger.error(f"Error marking absent accounts: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 
 def get_roster_for_alliance(alliance: str) -> dict[str, str]:
@@ -366,8 +362,7 @@ def get_roster_for_alliance(alliance: str) -> dict[str, str]:
         logger.error(f"Error fetching alliance roster: {e}")
         return {}
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 
 def get_linked_discord_ids_for_alliance(alliance: str) -> list[int]:
@@ -386,8 +381,7 @@ def get_linked_discord_ids_for_alliance(alliance: str) -> list[int]:
         logger.error(f"Error fetching alliance-linked discord IDs: {e}")
         return []
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 # ---------------------------------------------------------------------------
 # Pings & Config
@@ -404,8 +398,7 @@ def get_ping_channel(category: str) -> str | None:
         logger.error(f"Error fetching ping channel: {e}")
         return None
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def set_ping_channel(category: str, channel_id: str) -> None:
     try:
@@ -422,8 +415,7 @@ def set_ping_channel(category: str, channel_id: str) -> None:
         logger.error(f"Error setting ping channel: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def get_all_ping_roles() -> dict[str, list[str]]:
     """Returns a dictionary mapping category -> list of role names"""
@@ -441,8 +433,7 @@ def get_all_ping_roles() -> dict[str, list[str]]:
         logger.error(f"Error fetching ping roles: {e}")
         return {}
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())
 
 def add_ping_role(role_name: str, category: str) -> None:
     try:
@@ -458,5 +449,4 @@ def add_ping_role(role_name: str, category: str) -> None:
         logger.error(f"Error adding ping role: {e}")
         raise
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        _close_conn_from_locals(locals())

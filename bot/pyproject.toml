@@ -22,12 +22,14 @@ typeCheckingMode = "strict"
 include = ["src"]
 exclude = [
     "**/__pycache__",
-    ".venv"
+    ".venv",
+    "**/node_modules",
+    "**/.*"
 ]
 # Opzioni aggiuntive utili
 useLibraryCodeForTypes = true
 
 [dependency-groups]
 dev = [
-    "pyright>=1.1.408",
+    "pyright>=1.1.409",
 ]

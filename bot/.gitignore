@@ -1,5 +1,5 @@
 .idea
-.env
+.env.keys
 .venv
 __pycache__
 *.egg-info/

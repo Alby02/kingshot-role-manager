@@ -29,9 +29,9 @@ class PingView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
 
-        self.roles_config = get_all_ping_roles()
+        self.roles_config: dict[str, list[str]] = get_all_ping_roles()
 
-        options = []
+        options: list[discord.SelectOption] = []
         for category, role_names in self.roles_config.items():
             for role_name in role_names:
                 options.append(
@@ -53,7 +53,7 @@ class PingView(discord.ui.View):
             await interaction.response.send_message("No pings are configured.", ephemeral=True)
             return
 
-        selected_roles_names = set(selected_values)
+        selected_roles_names: set[str] = set(selected_values)
         member = interaction.user
         guild = interaction.guild
         if guild is None:
@@ -63,12 +63,12 @@ class PingView(discord.ui.View):
             await interaction.response.send_message("Could not resolve your server member record.", ephemeral=True)
             return
 
-        all_ping_roles = set()
+        all_ping_roles: set[str] = set()
         for role_names in self.roles_config.values():
             all_ping_roles.update(role_names)
 
-        roles_to_add = []
-        roles_to_remove = []
+        roles_to_add: list[discord.Role] = []
+        roles_to_remove: list[discord.Role] = []
 
         for role_name in all_ping_roles:
             role = await ensure_role_exists(guild, role_name, mentionable=True, reason="Auto-created ping role")
