@@ -4,7 +4,7 @@ from discord.ext import commands
 
 from kingshot_role_manager.services.database import get_account_by_game_id
 from kingshot_role_manager.services.permissions import has_officer_permission
-from kingshot_role_manager.ui.diplomacy_views import DiplomatConfirmView
+from kingshot_role_manager.ui.views import DiplomatActionView
 
 
 class Diplomacy(commands.Cog):
@@ -24,12 +24,17 @@ class Diplomacy(commands.Cog):
             await interaction.response.send_message(f"No game account found with ID `{game_id}`.", ephemeral=True)
             return
 
-        game_id, ign, discord_id, alliance, rank, is_diplomat = account
+        ign = account["ign"]
+        discord_id = account["discord_id"]
+        alliance = account["alliance"]
+        rank = account["rank"]
+        is_diplomat = account["is_diplomat"]
+        
         if is_diplomat:
             await interaction.response.send_message(f"**{ign}** is already marked as Diplomat.", ephemeral=True)
             return
 
-        view = DiplomatConfirmView(interaction.user.id, game_id, ign, discord_id, is_adding=True)
+        view = DiplomatActionView(interaction.user.id, game_id, ign, discord_id, is_adding=True)
         alliance_str = alliance if alliance else "None"
         rank_str = rank if rank else "None"
         embed = discord.Embed(
@@ -55,12 +60,17 @@ class Diplomacy(commands.Cog):
             await interaction.response.send_message(f"No game account found with ID `{game_id}`.", ephemeral=True)
             return
 
-        game_id, ign, discord_id, alliance, rank, is_diplomat = account
+        ign = account["ign"]
+        discord_id = account["discord_id"]
+        alliance = account["alliance"]
+        rank = account["rank"]
+        is_diplomat = account["is_diplomat"]
+        
         if not is_diplomat:
             await interaction.response.send_message(f"**{ign}** is not currently a Diplomat.", ephemeral=True)
             return
 
-        view = DiplomatConfirmView(interaction.user.id, game_id, ign, discord_id, is_adding=False)
+        view = DiplomatActionView(interaction.user.id, game_id, ign, discord_id, is_adding=False)
         alliance_str = alliance if alliance else "None"
         rank_str = rank if rank else "None"
         embed = discord.Embed(

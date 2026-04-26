@@ -24,8 +24,16 @@ class UserRoleData(TypedDict):
     had_alliance: bool
 
 
-UserIgnRow: TypeAlias = tuple[str, str, str | None, str | None, bool, int, int]
-AccountByGameIdRow: TypeAlias = tuple[str, str, int, str | None, str | None, bool]
+class PlayerAccount(TypedDict):
+    game_id: str
+    discord_id: int
+    ign: str
+    kingdom: int
+    level: int
+    is_diplomat: bool
+    has_been_in_alliance: bool
+    alliance: str | None
+    rank: str | None
 
 def _required_env(name: str) -> str:
     value = os.environ.get(name)
@@ -190,18 +198,32 @@ def update_player_data(discord_id: int, game_id: str, ign: str, kingdom: int, le
 # Query helpers
 # ---------------------------------------------------------------------------
 
-def get_user_igns(discord_id: int) -> list[UserIgnRow]:
+def get_user_igns(discord_id: int) -> list[PlayerAccount]:
     """Return all game accounts linked to a Discord user with their current roster status."""
     try:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT p.game_id, p.ign, r.alliance, r.rank, p.is_diplomat, p.kingdom, p.level 
+            SELECT p.game_id, p.discord_id, p.ign, p.kingdom, p.level, p.is_diplomat, p.has_been_in_alliance, r.alliance, r.rank 
             FROM players p
             LEFT JOIN roster r ON p.ign = r.ign
             WHERE p.discord_id = %s
         ''', (discord_id,))
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        return [
+            {
+                "game_id": row[0],
+                "discord_id": row[1],
+                "ign": row[2],
+                "kingdom": row[3],
+                "level": row[4],
+                "is_diplomat": row[5],
+                "has_been_in_alliance": row[6],
+                "alliance": row[7],
+                "rank": row[8],
+            }
+            for row in rows
+        ]
     except Exception as e:
         logger.error(f"Error fetching IGNs: {e}")
         return []
@@ -266,17 +288,30 @@ def get_all_linked_discord_ids() -> list[int]:
     finally:
         _close_conn_from_locals(locals())
 
-def get_account_by_game_id(game_id: str) -> AccountByGameIdRow | None:
+def get_account_by_game_id(game_id: str) -> PlayerAccount | None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT p.game_id, p.ign, p.discord_id, r.alliance, r.rank, p.is_diplomat 
+            SELECT p.game_id, p.discord_id, p.ign, p.kingdom, p.level, p.is_diplomat, p.has_been_in_alliance, r.alliance, r.rank 
             FROM players p
             LEFT JOIN roster r ON p.ign = r.ign
             WHERE p.game_id = %s
         ''', (game_id,))
-        return cursor.fetchone()
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "game_id": row[0],
+            "discord_id": row[1],
+            "ign": row[2],
+            "kingdom": row[3],
+            "level": row[4],
+            "is_diplomat": row[5],
+            "has_been_in_alliance": row[6],
+            "alliance": row[7],
+            "rank": row[8],
+        }
     except Exception as e:
         logger.error(f"Error fetching account: {e}")
         return None

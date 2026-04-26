@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 from kingshot_role_manager.services.roster import (
-    fetch_roster_attachment,
+    parse_roster_json,
     validate_roster_json,
     process_roster,
     compute_roster_diff,
@@ -17,7 +17,7 @@ from kingshot_role_manager.services.permissions import (
 
 logger = logging.getLogger(__name__)
 
-class Reconciliation(commands.Cog):
+class Roster(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
@@ -61,7 +61,8 @@ class Reconciliation(commands.Cog):
 
         await interaction.response.defer()
 
-        data = await fetch_roster_attachment(file)
+        raw_bytes = await file.read()
+        data = parse_roster_json(raw_bytes)
         if data is None:
             await interaction.followup.send("❌ Failed to read or decode the JSON file. Invalid format.")
             return
@@ -124,7 +125,8 @@ class Reconciliation(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        data = await fetch_roster_attachment(file)
+        raw_bytes = await file.read()
+        data = parse_roster_json(raw_bytes)
         if data is None:
             await interaction.followup.send("Failed to read or decode the JSON file. Invalid format.", ephemeral=True)
             return
@@ -209,4 +211,4 @@ class Reconciliation(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Reconciliation(bot))
+    await bot.add_cog(Roster(bot))

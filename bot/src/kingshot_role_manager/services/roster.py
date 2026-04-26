@@ -79,15 +79,12 @@ def _normalize_roster_json(data: object) -> RosterJson:
 
     return normalized
 
-import discord
-
-async def fetch_roster_attachment(attachment: discord.Attachment) -> RosterJson | None:
+def parse_roster_json(raw_bytes: bytes) -> RosterJson | None:
     try:
-        raw = await attachment.read()
-        decoded = json.loads(raw.decode("utf-8"))
+        decoded = json.loads(raw_bytes.decode("utf-8"))
         return _normalize_roster_json(decoded)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        logger.error(f"Failed to decode attachment: {e}")
+        logger.error(f"Failed to decode roster data: {e}")
         return None
 
 async def process_roster(guild: discord.Guild, data: RosterJson, alliance: str) -> RosterSummary:

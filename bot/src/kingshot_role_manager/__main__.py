@@ -22,11 +22,10 @@ class KingshotBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         extensions = [
-            "kingshot_role_manager.cogs.verification",
+            "kingshot_role_manager.cogs.identity",
             "kingshot_role_manager.cogs.events",
-            "kingshot_role_manager.cogs.admin",
             "kingshot_role_manager.cogs.diplomacy",
-            "kingshot_role_manager.cogs.reconciliation",
+            "kingshot_role_manager.cogs.roster",
         ]
         for extension in extensions:
             await self.load_extension(extension)
@@ -38,8 +37,6 @@ class KingshotBot(commands.Bot):
     async def on_ready(self) -> None:
         if self.user:
             logger.info("Logged in as %s (ID: %s)", self.user, self.user.id)
-        logger.info("Initializing PostgreSQL schema...")
-        init_db()
         logger.info("Initialization complete. Bot is ready.")
 
 
@@ -48,7 +45,9 @@ def main() -> None:
     if not token:
         logger.error("DISCORD_TOKEN environment variable is not set.")
         return
-
+    logger.info("Initializing Postgres schema...")
+    init_db()
+    logger.info("Postgres is Ready")
     bot = KingshotBot()
     bot.run(token)
 

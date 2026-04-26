@@ -2,18 +2,19 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import logging
-from kingshot_role_manager.services.database import update_player_data
+
+from kingshot_role_manager.services.database import get_user_igns, update_player_data
 from kingshot_role_manager.services.role_sync import sync_roles_for_user
 from kingshot_role_manager.services.kingshot_api import fetch_ign
 from kingshot_role_manager.services.permissions import (
     has_player_manager_permission,
     bootstrap_management_roles,
 )
-from kingshot_role_manager.ui.verification_views import ConfirmView, SetPlayerConfirmView
+from kingshot_role_manager.ui.views import LinkAccountView
 
 logger = logging.getLogger(__name__)
 
-class Verification(commands.Cog):
+class Identity(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
@@ -32,7 +33,15 @@ class Verification(commands.Cog):
         level = player_data.get("level", 0)
         photo = player_data.get("profilePhoto")
 
-        view = ConfirmView(interaction.user.id, player_id, ign, kingdom, level)
+        view = LinkAccountView(
+            actor_id=interaction.user.id, 
+            target_member_id=interaction.user.id,
+            game_id=player_id, 
+            ign=ign, 
+            kingdom=kingdom, 
+            level=level
+        )
+        
         embed = discord.Embed(
             title=f"Verify Account: {ign}", 
             description=f"**Kingdom:** {kingdom} | **Level:** {level}\n\nIs this your Kingshot account?", 
@@ -65,7 +74,32 @@ class Verification(commands.Cog):
         else:
             await interaction.followup.send(f"❌ Error: The account ID `{player_id}` is not linked to your Discord profile.", ephemeral=True)
 
-    @app_commands.command(name="setplayer", description="Manually link a game account to a user.")
+    @app_commands.command(name="whois", description="Looks up the linked Kingshot game accounts for a Discord user.")
+    @app_commands.describe(member="The Discord member to look up")
+    async def whois(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        accounts = get_user_igns(member.id)
+        if not accounts:
+            await interaction.response.send_message(f"❌ {member.display_name} has no linked Kingshot game accounts.")
+            return
+
+        embed = discord.Embed(
+            title=f"👤 Kingshot Accounts for {member.display_name}",
+            color=discord.Color.purple()
+        )
+        
+        for account in accounts:
+            alliance_str = account["alliance"] if account["alliance"] else "None"
+            rank_str = account["rank"] if account["rank"] else "None"
+            diplomat_str = " 🤝 Diplomat" if account["is_diplomat"] else ""
+            embed.add_field(
+                name=f"🎮 {account['ign']} (ID: {account['game_id']}){diplomat_str}",
+                value=f"**Kingdom:** {account['kingdom']} | **Level:** {account['level']}\n**Alliance:** {alliance_str} | **Rank:** {rank_str}",
+                inline=False
+            )
+            
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="setplayer", description="Manually link a game account to a user (roster-manager/Admin).")
     @app_commands.describe(member="The user to link", game_id="The Kingshot Player ID")
     @app_commands.default_permissions(administrator=True)
     async def setplayer(self, interaction: discord.Interaction, member: discord.Member, game_id: str) -> None:
@@ -95,7 +129,14 @@ class Verification(commands.Cog):
         level = player_data.get("level", 0)
         photo = player_data.get("profilePhoto")
 
-        view = SetPlayerConfirmView(interaction.user.id, member, game_id, ign, kingdom, level)
+        view = LinkAccountView(
+            actor_id=interaction.user.id,
+            target_member_id=member.id,
+            game_id=game_id,
+            ign=ign,
+            kingdom=kingdom,
+            level=level
+        )
         embed = discord.Embed(
             title=f"Assign Account: {ign}",
             description=f"**Kingdom:** {kingdom} | **Level:** {level}\n\nAssign this Kingshot account to {member.mention}?",
@@ -106,5 +147,6 @@ class Verification(commands.Cog):
 
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
+
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Verification(bot))
+    await bot.add_cog(Identity(bot))
