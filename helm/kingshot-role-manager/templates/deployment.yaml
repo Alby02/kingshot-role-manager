@@ -21,7 +21,6 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ include "kingshot-role-manager.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -33,8 +32,19 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "kingshot-role-manager.secretName" . }}
+          env:
+            - name: DATABASE_HOST
+              value: {{ required "config.database.host is required" .Values.config.database.host | quote }}
+            - name: DATABASE_PORT
+              value: {{ .Values.config.database.port | toString | quote }}
+            - name: DATABASE_NAME
+              value: {{ required "config.database.name is required" .Values.config.database.name | quote }}
+            - name: DATABASE_USER
+              value: {{ required "config.database.user is required" .Values.config.database.user | quote }}
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           livenessProbe:
             exec:
               command: ["python", "-c", "import sys; sys.exit(0)"]

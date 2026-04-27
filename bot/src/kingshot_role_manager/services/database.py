@@ -1,7 +1,7 @@
 import os
 import logging
 from datetime import datetime
-from typing import Mapping, Sequence, TypedDict, TypeAlias
+from typing import Mapping, Sequence, TypedDict
 
 import psycopg
 

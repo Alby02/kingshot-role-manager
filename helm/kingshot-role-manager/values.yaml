@@ -1,42 +1,30 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/your-org/kingshot-role-manager
+  repository: ghcr.io/alby02/kingshot-role-manager
   pullPolicy: IfNotPresent
   tag: latest
 
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
-
-serviceAccount:
-  create: true
-  automount: true
-  annotations: {}
-  name: ""
-
 podAnnotations: {}
 podLabels: {}
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
-
+resources: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+config:
+  database:
+    host: ""
+    port: "5432"
+    name: kingshot_role_manager
+    user: ""
 
 secret:
   create: true
   existingSecret: ""
   discordToken: ""
   database:
-    host: ""
-    port: "5432"
-    name: kingshot_role_manager
-    user: ""
     password: ""

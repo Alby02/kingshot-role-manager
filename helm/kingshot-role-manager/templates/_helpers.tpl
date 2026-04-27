@@ -32,13 +32,6 @@ app.kubernetes.io/name: {{ include "kingshot-role-manager.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "kingshot-role-manager.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create -}}
-{{- default (include "kingshot-role-manager.fullname" .) .Values.serviceAccount.name -}}
-{{- else -}}
-{{- default "default" .Values.serviceAccount.name -}}
-{{- end -}}
-{{- end -}}
 
 {{- define "kingshot-role-manager.secretName" -}}
 {{- if .Values.secret.existingSecret -}}

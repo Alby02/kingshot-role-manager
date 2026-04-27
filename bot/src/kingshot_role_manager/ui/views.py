@@ -1,6 +1,5 @@
 import logging
 import discord
-from typing import Callable, Awaitable
 
 from kingshot_role_manager.services.database import register_user, set_diplomat
 from kingshot_role_manager.services.role_sync import sync_roles_for_user
