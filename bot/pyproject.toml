@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kingshot-role-manager"
+version = "0.1.0"
+description = "Discord bot for managing Kingshot alliance roles"
+requires-python = ">=3.12"
+dependencies = [
+    "discord-py>=2.7.1",
+    "aiohttp>=3.9.0",
+    "psycopg[binary]>=3.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = ["src"]
+exclude = [
+    "**/__pycache__",
+    ".venv",
+    "**/node_modules",
+    "**/.*"
+]
+# Opzioni aggiuntive utili
+useLibraryCodeForTypes = true
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.409",
+]

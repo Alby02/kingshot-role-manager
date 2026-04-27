@@ -1,0 +1,13 @@
+[project]
+name = "kingshot-roster-script"
+version = "0.1.0"
+description = "Extract alliance roster data from screen recordings via FFmpeg + Tesseract OCR"
+requires-python = ">=3.12"
+dependencies = [
+    "pillow>=10.0.0",
+    "pytesseract>=0.3.10",
+    "thefuzz[speedup]>=0.22.0",
+]
+
+[project.scripts]
+roster = "roster_script.__main__:main"
