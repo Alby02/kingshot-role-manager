@@ -26,21 +26,23 @@ class PingRoleSelect(discord.ui.Select["PingView"]):
 
 
 class PingView(discord.ui.View):
-    def __init__(self) -> None:
+    def __init__(self, user_alliances: set[str]) -> None:
         super().__init__(timeout=None)
+        self.user_alliances = user_alliances
 
         self.roles_config: dict[str, list[str]] = get_all_ping_roles()
 
         options: list[discord.SelectOption] = []
         for category, role_names in self.roles_config.items():
-            for role_name in role_names:
-                options.append(
-                    discord.SelectOption(
-                        label=role_name,
-                        description=f"{category} ping",
-                        value=role_name,
+            if category in self.user_alliances or category == "BOTH":
+                for role_name in role_names:
+                    options.append(
+                        discord.SelectOption(
+                            label=role_name,
+                            description=f"{category} ping",
+                            value=role_name,
+                        )
                     )
-                )
 
         if not options:
             options.append(discord.SelectOption(label="No pings configured", value="none"))

@@ -3,7 +3,7 @@
 ## Scope
 This repository has two components:
 
-1. `bot/`: Discord bot that verifies players, reconciles roster uploads, and syncs Discord roles.
+1. `bot/`: Discord bot that verifies players, reconciles roster uploads, manages event pings, and syncs Discord roles.
 2. `roster-script/`: Local OCR CLI that extracts roster JSON from video captures.
 
 ## Runtime Stack
@@ -11,10 +11,10 @@ This repository has two components:
 ### Bot
 - Python 3.12+
 - `discord.py`
-- `aiohttp`
-- `psycopg` (PostgreSQL)
+- `curl_cffi` (for TLS spoofing Kingshot API)
+- `psycopg` (PostgreSQL 18+)
 - Container build via `Containerfile`
-- Primary deployment target: k3s (Kubernetes)
+- Primary deployment target: k3s (Kubernetes) via custom Helm charts and `helmfile`
 
 ### Roster Script
 - Python 3.12+
@@ -23,16 +23,16 @@ This repository has two components:
 
 ## Source Layout
 - `bot/src/kingshot_role_manager/__main__.py`: bot entrypoint and cog loading
-- `bot/src/kingshot_role_manager/cogs/verification.py`: `/verify`, `/sync`, `/setplayer`
-- `bot/src/kingshot_role_manager/cogs/admin.py`: `/whois`
+- `bot/src/kingshot_role_manager/cogs/identity.py`: `/verify`, `/sync`, `/whois`, `/setplayer`, `/removeplayer`
 - `bot/src/kingshot_role_manager/cogs/diplomacy.py`: `/setdiplomat`, `/removediplomat`
-- `bot/src/kingshot_role_manager/cogs/reconciliation.py`: `/upload_roster`
-- `bot/src/kingshot_role_manager/cogs/events.py`: ping role commands
-- `bot/src/kingshot_role_manager/ui/`: reusable Discord view components
+- `bot/src/kingshot_role_manager/cogs/roster.py`: `/upload_roster`, `/roster_diff`, `/reconcile_alliance`
+- `bot/src/kingshot_role_manager/cogs/events.py`: `/pings`, `/create_ping`, `/set_ping_channel`, `/schedule_ping`, `/ping_config`
+- `bot/src/kingshot_role_manager/ui/`: reusable Discord view components (`views.py`, `ping_views.py`)
 - `bot/src/kingshot_role_manager/services/database.py`: PostgreSQL schema initialization and DB helpers
 - `bot/src/kingshot_role_manager/services/role_sync.py`: data-driven role assignment
 - `bot/src/kingshot_role_manager/services/roster.py`: JSON validation, reconciliation orchestration
-- `bot/db/schema.sql`: SQL bootstrap for PostgreSQL
+- `bot/src/kingshot_role_manager/services/kingshot_api.py`: Kingshot Web API communication
+- `bot/src/kingshot_role_manager/services/scheduler.py`: In-memory timer service for scheduled pings
 
 ## Environment Variables (Bot)
 - `DISCORD_TOKEN`: Discord bot token
@@ -59,29 +59,34 @@ This repository has two components:
 - `rank` TEXT NOT NULL
 - `last_updated` TIMESTAMPTZ NOT NULL
 
-### `ping_channels`
+### `ping_config`
 - `category` TEXT PRIMARY KEY
 - `channel_id` TEXT NOT NULL
+- `roles` JSONB DEFAULT '[]'::jsonb
 
-### `ping_roles`
-- `role_name` TEXT PRIMARY KEY
-- `category` TEXT NOT NULL
+### `ping_schedules`
+- `id` SERIAL PRIMARY KEY
+- `role_name` TEXT NOT NULL
+- `message` TEXT NOT NULL
+- `send_at` TIMESTAMPTZ NOT NULL
+- `recurrence` TEXT
 
 ## Command Behavior Notes
 
 ### Permission Role Gates
-- `/upload_roster` and `/setplayer`: requires `roster-manager` or Administrator
-- `/setdiplomat` and `/removediplomat`: requires `R4`, `R5`, or Administrator
+- `/upload_roster`, `/roster_diff`, `/reconcile_alliance`, `/setplayer`, and `/removeplayer`: requires `roster-manager` or Administrator
+- `/setdiplomat`, `/removediplomat`, and `/schedule_ping`: requires `R4`, `R5`, or Administrator
 - Missing managed roles are auto-created by the bot when permissions allow.
 
-### `/upload_roster`
+### `/upload_roster`, `/roster_diff`, `/reconcile_alliance`
 - Requires roster permission (`roster-manager` or Admin).
-- Requires two inputs: JSON file + alliance selection (`BOO` or `ZEN`).
+- `/upload_roster` and `/roster_diff` require a JSON file + alliance selection (`BOO` or `ZEN`).
 - JSON entries must contain `ign`; `rank`
 - Reconciliation flow:
   1. Validate payload
   2. Upsert roster rows for selected alliance
   3. Remove absent rows by timestamp diff
+- `/reconcile_alliance` allows forcing a sync based on the existing database state.
 
 ## Role Sync Summary
 - Active roster player -> `Member` + alliance role + rank role

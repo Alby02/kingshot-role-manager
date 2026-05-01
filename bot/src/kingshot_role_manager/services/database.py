@@ -35,6 +35,13 @@ class PlayerAccount(TypedDict):
     alliance: str | None
     rank: str | None
 
+class ScheduledPing(TypedDict):
+    id: int
+    role_name: str
+    message: str
+    send_at: datetime
+    recurrence: str | None
+
 def _required_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -93,14 +100,18 @@ CREATE TABLE IF NOT EXISTS roster (
     last_updated TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS ping_channels (
+CREATE TABLE IF NOT EXISTS ping_config (
     category TEXT PRIMARY KEY,
-    channel_id TEXT NOT NULL
+    channel_id TEXT NOT NULL,
+    roles JSONB DEFAULT '[]'::jsonb
 );
 
-CREATE TABLE IF NOT EXISTS ping_roles (
-    role_name TEXT PRIMARY KEY,
-    category TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS ping_schedules (
+    id SERIAL PRIMARY KEY,
+    role_name TEXT NOT NULL,
+    message TEXT NOT NULL,
+    send_at TIMESTAMPTZ NOT NULL,
+    recurrence TEXT
 );
 '''
 
@@ -109,6 +120,26 @@ def init_db() -> None:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(SCHEMA_SQL)
+
+        cursor.execute("SELECT COUNT(*) FROM ping_config")
+        row = cursor.fetchone()
+        if row and row[0] == 0:
+            cursor.execute("SELECT to_regclass('ping_channels')")
+            row2 = cursor.fetchone()
+            if row2 and row2[0]:
+                logger.info("Migrating old ping tables to ping_config...")
+                cursor.execute('''
+                    INSERT INTO ping_config (category, channel_id, roles)
+                    SELECT 
+                        pc.category, 
+                        pc.channel_id, 
+                        COALESCE(jsonb_agg(pr.role_name) FILTER (WHERE pr.role_name IS NOT NULL), '[]'::jsonb)
+                    FROM ping_channels pc
+                    LEFT JOIN ping_roles pr ON pc.category = pr.category
+                    GROUP BY pc.category, pc.channel_id
+                ''')
+                cursor.execute("DROP TABLE ping_channels")
+                cursor.execute("DROP TABLE ping_roles")
 
         conn.commit()
         logger.info("Database initialized successfully.")
@@ -190,6 +221,18 @@ def update_player_data(discord_id: int, game_id: str, ign: str, kingdom: int, le
         return True
     except Exception as e:
         logger.error(f"Error updating IGN in DB: {e}")
+        raise
+    finally:
+        _close_conn_from_locals(locals())
+
+def delete_player_account(game_id: str) -> None:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM players WHERE game_id = %s', (game_id,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error deleting player account {game_id}: {e}")
         raise
     finally:
         _close_conn_from_locals(locals())
@@ -426,7 +469,7 @@ def get_ping_channel(category: str) -> str | None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT channel_id FROM ping_channels WHERE category = %s', (category,))
+        cursor.execute('SELECT channel_id FROM ping_config WHERE category = %s', (category,))
         row = cursor.fetchone()
         return row[0] if row else None
     except Exception as e:
@@ -440,7 +483,7 @@ def set_ping_channel(category: str, channel_id: str) -> None:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO ping_channels (category, channel_id)
+            INSERT INTO ping_config (category, channel_id)
             VALUES (%s, %s)
             ON CONFLICT (category)
             DO UPDATE SET channel_id = EXCLUDED.channel_id
@@ -457,13 +500,11 @@ def get_all_ping_roles() -> dict[str, list[str]]:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT category, role_name FROM ping_roles')
-        roles: dict[str, list[str]] = {}
-        for category, role_name in cursor.fetchall():
-            if category not in roles:
-                roles[category] = []
-            roles[category].append(role_name)
-        return roles
+        cursor.execute('SELECT category, roles FROM ping_config')
+        roles_dict: dict[str, list[str]] = {}
+        for category, roles in cursor.fetchall():
+            roles_dict[category] = roles if roles else []
+        return roles_dict
     except Exception as e:
         logger.error(f"Error fetching ping roles: {e}")
         return {}
@@ -474,14 +515,135 @@ def add_ping_role(role_name: str, category: str) -> None:
     try:
         conn = get_connection()
         cursor = conn.cursor()
+        import json
+        json_role = json.dumps([role_name])
         cursor.execute('''
-            INSERT INTO ping_roles (role_name, category)
-            VALUES (%s, %s)
-            ON CONFLICT (role_name) DO NOTHING
-        ''', (role_name, category))
+            UPDATE ping_config 
+            SET roles = roles || %s::jsonb 
+            WHERE category = %s AND NOT (roles @> %s::jsonb)
+        ''', (json_role, category, json_role))
+        if cursor.rowcount == 0:
+            # Maybe the category doesn't exist yet, insert it with no channel
+            cursor.execute('''
+                INSERT INTO ping_config (category, channel_id, roles)
+                VALUES (%s, '', %s::jsonb)
+                ON CONFLICT (category) DO UPDATE
+                SET roles = ping_config.roles || EXCLUDED.roles
+                WHERE NOT (ping_config.roles @> EXCLUDED.roles)
+            ''', (category, json_role))
         conn.commit()
     except Exception as e:
         logger.error(f"Error adding ping role: {e}")
+        raise
+    finally:
+        _close_conn_from_locals(locals())
+
+def add_ping_schedule(role_name: str, message: str, send_at: datetime, recurrence: str | None = None) -> int:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO ping_schedules (role_name, message, send_at, recurrence)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        ''', (role_name, message, send_at, recurrence))
+        row = cursor.fetchone()
+        inserted_id = row[0] if row else 0
+        conn.commit()
+        return inserted_id
+    except Exception as e:
+        logger.error(f"Error adding ping schedule: {e}")
+        raise
+    finally:
+        _close_conn_from_locals(locals())
+
+def get_all_ping_schedules() -> list[ScheduledPing]:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, role_name, message, send_at, recurrence
+            FROM ping_schedules
+            ORDER BY send_at ASC
+        ''')
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row[0],
+                "role_name": row[1],
+                "message": row[2],
+                "send_at": row[3],
+                "recurrence": row[4]
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching ping schedules: {e}")
+        return []
+    finally:
+        _close_conn_from_locals(locals())
+
+def get_ping_schedule(schedule_id: int) -> ScheduledPing | None:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, role_name, message, send_at, recurrence
+            FROM ping_schedules
+            WHERE id = %s
+        ''', (schedule_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "role_name": row[1],
+            "message": row[2],
+            "send_at": row[3],
+            "recurrence": row[4]
+        }
+    except Exception as e:
+        logger.error(f"Error fetching ping schedule {schedule_id}: {e}")
+        return None
+    finally:
+        _close_conn_from_locals(locals())
+
+def delete_ping_schedule(schedule_id: int) -> None:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM ping_schedules WHERE id = %s', (schedule_id,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error deleting ping schedule: {e}")
+        raise
+    finally:
+        _close_conn_from_locals(locals())
+
+def update_ping_schedule_time(schedule_id: int, new_send_at: datetime) -> None:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE ping_schedules SET send_at = %s WHERE id = %s', (new_send_at, schedule_id))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error updating ping schedule time: {e}")
+        raise
+    finally:
+        _close_conn_from_locals(locals())
+
+def update_ping_schedule_full(schedule_id: int, role_name: str, message: str, send_at: datetime, recurrence: str | None) -> None:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE ping_schedules 
+            SET role_name = %s, message = %s, send_at = %s, recurrence = %s 
+            WHERE id = %s
+        ''', (role_name, message, send_at, recurrence, schedule_id))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error doing full update on ping schedule {schedule_id}: {e}")
         raise
     finally:
         _close_conn_from_locals(locals())
