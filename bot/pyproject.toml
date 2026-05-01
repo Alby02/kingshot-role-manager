@@ -9,8 +9,8 @@ description = "Discord bot for managing Kingshot alliance roles"
 requires-python = ">=3.12"
 dependencies = [
     "discord-py>=2.7.1",
-    "aiohttp>=3.9.0",
     "psycopg[binary]>=3.2.0",
+    "curl-cffi>=0.15.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -26,22 +26,18 @@ services:
       - pgadmin_data:/var/lib/pgadmin
 
   bot:
-    build:
-      context: .
-      dockerfile: Containerfile
-    image: kingshot-role-manager:latest
+    image: ghcr.io/alby02/kingshot-role-manager:1.3
     container_name: kingshot-role-manager
     restart: unless-stopped
     depends_on:
       - postgres
-    env_file:
-      - .env
     environment:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_NAME=kingshot_role_manager
       - DATABASE_USER=kingshot
       - DATABASE_PASSWORD=kingshot
+      - DISCORD_TOKEN=${DISCORD_TEST_TOKEN}
 
 volumes:
   postgres_data:
