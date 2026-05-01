@@ -147,6 +147,64 @@ class Identity(commands.Cog):
 
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
+    @app_commands.command(name="removeplayer", description="Remove a linked game account from a user (roster-manager/Admin).")
+    @app_commands.describe(member="The user to unlink", game_id="The Kingshot Player ID to remove (if they have multiple)")
+    @app_commands.default_permissions(administrator=True)
+    async def removeplayer(self, interaction: discord.Interaction, member: discord.Member, game_id: str | None = None) -> None:
+        if not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+
+        guild = interaction.guild
+        if guild:
+            await bootstrap_management_roles(guild, interaction.user)
+
+        if not has_player_manager_permission(interaction.user):
+            await interaction.response.send_message(
+                "You need one of these roles: roster-manager, player-manager, or Administrator.",
+                ephemeral=True,
+            )
+            return
+
+        from kingshot_role_manager.services.database import get_user_igns, delete_player_account
+        from kingshot_role_manager.ui.views import RemoveAccountSelect, RemoveAccountView
+
+        if game_id:
+            await interaction.response.defer(ephemeral=True)
+            try:
+                delete_player_account(game_id)
+                await interaction.followup.send(f"✅ Successfully unlinked account ID `{game_id}` from {member.mention}.", ephemeral=True)
+                if interaction.guild:
+                    await sync_roles_for_user(interaction.guild, member.id)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Failed to unlink account: {e}", ephemeral=True)
+            return
+
+        accounts = get_user_igns(member.id)
+        if not accounts:
+            await interaction.response.send_message(f"❌ {member.display_name} has no linked Kingshot game accounts.", ephemeral=True)
+            return
+
+        if len(accounts) == 1:
+            g_id = accounts[0]["game_id"]
+            await interaction.response.defer(ephemeral=True)
+            try:
+                delete_player_account(g_id)
+                await interaction.followup.send(f"✅ Successfully unlinked account **{accounts[0]['ign']}** (ID: `{g_id}`) from {member.mention}.", ephemeral=True)
+                if interaction.guild:
+                    await sync_roles_for_user(interaction.guild, member.id)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Failed to unlink account: {e}", ephemeral=True)
+            return
+
+        view = RemoveAccountView(target_member=member)
+        view.add_item(RemoveAccountSelect(accounts)) # type: ignore
+        await interaction.response.send_message(
+            f"{member.display_name} has multiple linked accounts. Please select which one to remove:",
+            view=view,
+            ephemeral=True
+        )
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Identity(bot))

@@ -26,7 +26,7 @@ services:
       - pgadmin_data:/var/lib/pgadmin
 
   bot:
-    image: ghcr.io/alby02/kingshot-role-manager:1.3
+    image: ghcr.io/alby02/kingshot-role-manager:latest
     container_name: kingshot-role-manager
     restart: unless-stopped
     depends_on:

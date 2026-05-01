@@ -86,3 +86,39 @@ class DiplomatActionView(BaseConfirmView):
 
         if self.target_member_id and interaction.guild:
             await sync_roles_for_user(interaction.guild, self.target_member_id)
+
+class RemoveAccountSelect(discord.ui.Select["RemoveAccountView"]):
+    def __init__(self, accounts: list[dict[str, object]]) -> None:
+        options = [
+            discord.SelectOption(
+                label=f"{acc['ign']} (ID: {acc['game_id']})",
+                description=f"K{acc['kingdom']} | Lvl {acc['level']}",
+                value=str(acc["game_id"])
+            )
+            for acc in accounts
+        ]
+        super().__init__(placeholder="Select an account to unlink...", options=options)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if self.view is None:
+            return
+        await self.view.handle_select(interaction, self.values[0])
+
+class RemoveAccountView(discord.ui.View):
+    def __init__(self, target_member: discord.Member) -> None:
+        super().__init__(timeout=120)
+        self.target_member = target_member
+
+    async def handle_select(self, interaction: discord.Interaction, game_id: str) -> None:
+        from kingshot_role_manager.services.database import delete_player_account
+        from kingshot_role_manager.services.role_sync import sync_roles_for_user
+        
+        await interaction.response.defer(ephemeral=True)
+        try:
+            delete_player_account(game_id)
+            await interaction.followup.send(f"✅ Successfully unlinked account ID `{game_id}` from {self.target_member.mention}.", ephemeral=True)
+            if interaction.guild:
+                await sync_roles_for_user(interaction.guild, self.target_member.id)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to unlink account: {e}", ephemeral=True)
+        self.stop()
